@@ -4,6 +4,8 @@ import { parseMatches } from '../src/csv/store.ts';
 import { duplicateKey, parseScore, resolveBracket, validateBracket, validateWinner } from '../src/bracket/bracket.ts';
 import { namesEqual } from '../src/utils/names.ts';
 import type { MatchRow } from '../src/models/match.ts';
+import { shouldRunHeadless } from '../src/utr/browser.ts';
+import { loginTimeout } from '../src/utr/login.ts';
 
 const csv = `match_id,round,player_a,player_b,depends_on_a,depends_on_b,winner,score,status
 R1,R16,Alice Smith,Bob Jones,,,,,READY_TO_CREATE
@@ -45,5 +47,12 @@ describe('CSV and bracket automation', () => {
   });
   it('normalizes capitalization, whitespace, and Unicode spacing only', () => {
     assert.equal(namesEqual('Pranav\u00a0 V', ' pranav v '), true); assert.equal(namesEqual('Pranav V', 'Pranav Vijay'), false);
+  });
+  it('uses headed mode unless headless is explicitly requested', () => {
+    assert.equal(shouldRunHeadless(undefined), false); assert.equal(shouldRunHeadless('false'), false);
+    assert.equal(shouldRunHeadless('TRUE'), true);
+  });
+  it('validates the manual login timeout', () => {
+    assert.equal(loginTimeout('120000'), 120_000); assert.equal(loginTimeout('bad'), 600_000);
   });
 });

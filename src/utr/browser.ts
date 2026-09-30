@@ -4,12 +4,18 @@ import type { BrowserContext, Page } from 'playwright';
 
 export interface UtrSession { context: BrowserContext; page: Page }
 
+export function shouldRunHeadless(value = process.env.UTR_HEADLESS): boolean {
+  return value?.trim().toLocaleLowerCase() === 'true';
+}
+
 export async function openSession(): Promise<UtrSession> {
   const { chromium } = await import('playwright');
   const profile = path.resolve(process.env.UTR_PROFILE_DIR || '.playwright/utr-profile');
   fs.mkdirSync(profile, { recursive: true });
   const channel = process.env.UTR_BROWSER_CHANNEL || undefined;
-  const headless = process.env.UTR_HEADLESS === 'true' || !process.env.DISPLAY;
+  // Do not infer headless mode from DISPLAY: macOS and Windows normally have no
+  // DISPLAY variable, and doing so prevents the user from completing login/MFA.
+  const headless = shouldRunHeadless();
   const context = await chromium.launchPersistentContext(profile, {
     headless, channel, viewport: { width: 1440, height: 1000 }
   });

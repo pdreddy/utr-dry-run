@@ -2,7 +2,14 @@
 export const SELECTORS = {
   authenticated: [
     '[data-testid="user-menu"]', '[aria-label*="profile" i]',
-    'a[href*="logout" i]', 'button:has-text("Log out")'
+    '[data-testid*="avatar" i]', 'a[href*="logout" i]',
+    'button:has-text("Log out")', 'button:has-text("Sign out")',
+    'a[href*="/profile/"]', 'a[href*="/home"]'
+  ],
+  login: [
+    'input[type="password"]', 'input[type="email"]',
+    'button:has-text("Log in")', 'button:has-text("Sign in")',
+    'a:has-text("Log in")', 'a:has-text("Sign in")'
   ],
   eventDesk: [
     'a:has-text("Event Desk")', 'button:has-text("Event Desk")',

@@ -12,7 +12,7 @@ cp .env.example .env
 
 Set `UTR_EVENT_URL` (preferred) or `UTR_EVENT_ID`, plus the exact `UTR_EVENT_NAME`. Credentials do not belong in `.env`: on the first headed run, log in normally in Chrome and complete any legitimate MFA/CAPTCHA. The authenticated session is retained in `.playwright/utr-profile/`. Do not commit that directory.
 
-In a desktop shell leave `UTR_HEADLESS=false`. A host without `$DISPLAY` safely falls back to headless and reports that interactive authentication is required rather than attempting to evade it.
+Leave `UTR_HEADLESS=false` for the first run. Headed mode is not inferred from `$DISPLAY` because Windows and macOS normally do not define it. The browser remains open for up to ten minutes (configurable with `UTR_LOGIN_TIMEOUT_MS`) so the account owner can complete legitimate login/MFA. Set `UTR_HEADLESS=true` only after the persistent profile has been authenticated.
 
 ## Commands and safety modes
 
@@ -70,3 +70,7 @@ Unit/integration coverage uses Node's built-in test runner and includes CSV pars
 - The match-tiebreak is accepted locally but live population proceeds only if UTR presents enough score inputs for that event format.
 - An authenticated profile and event URL were not included in this repository; no real player resolution or event mutation can be tested without the authorized account owner completing login and configuration.
 - Automated checks never bypass CAPTCHA, MFA, access controls, or security challenges.
+
+### Login troubleshooting
+
+If the CLI reports that authentication is required, confirm `.env` contains `UTR_HEADLESS=false` and rerun the browser dry run. Complete login in the browser window and leave that window open; the CLI detects the authenticated navigation and continues automatically. On a truly display-less Linux host, run the first login from a desktop machine or a legitimate remote desktop session using the same protected profile directory—do not copy credentials into configuration.
