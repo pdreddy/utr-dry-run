@@ -13,7 +13,7 @@ import { discoverControls } from './utr/discovery.ts';
 import { prepareMatch } from './utr/matches.ts';
 import { prepareScore } from './utr/scores.ts';
 
-type ModeOptions = { dryRun?: boolean; browserDryRun?: boolean; live?: boolean; all?: boolean };
+type ModeOptions = { dryRun?: boolean; browserDryRun?: boolean; live?: boolean; all?: boolean; keepOpen?: boolean };
 
 function loadDotEnv(): void {
   if (!fs.existsSync('.env')) return;
@@ -103,7 +103,17 @@ async function browserRun(file: string, operation: 'create'|'scores'|'sync', opt
         console.log(`LIVE TEST PASSED\n\nR16-1 successfully created.\nUTR match ID: ${row.utr_match_id || 'not exposed'}\nUTR URL: ${row.utr_match_url}`);
       }
     }
-  } finally { await session.context.close(); }
+  } finally {
+    if (options.keepOpen) {
+      console.log('KEEP OPEN: Browser will remain open for inspection. Press Ctrl+C once to close it safely.');
+      await new Promise<void>(resolve => {
+        const finish = () => resolve();
+        process.once('SIGINT', finish);
+        process.once('SIGTERM', finish);
+      });
+    }
+    await session.context.close();
+  }
 }
 
 async function main(): Promise<void> {
@@ -111,13 +121,13 @@ async function main(): Promise<void> {
   const command = args[0];
   const file = args[1] && !args[1].startsWith('--') ? args[1] : 'matches.csv';
   if (!command || !['validate', 'plan', 'create', 'scores', 'sync'].includes(command)) {
-    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all]');
+    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all] [--keep-open]');
   }
   if (command === 'validate') { console.log(`VALID: ${load(file).rows.length} matches`); return; }
   if (command === 'plan') { printPlan(load(file).rows); return; }
   const options: ModeOptions = {
     dryRun: args.includes('--dry-run'), browserDryRun: args.includes('--browser-dry-run'),
-    live: args.includes('--live'), all: args.includes('--all')
+    live: args.includes('--live'), all: args.includes('--all'), keepOpen: args.includes('--keep-open')
   };
   await browserRun(file, command as 'create'|'scores'|'sync', options);
 }

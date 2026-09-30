@@ -29,6 +29,7 @@ npm run utr -- sync matches.csv --dry-run
 
 - **Dry run:** no browser; prints every proposed action and dependency.
 - **Browser dry run:** authenticates, verifies the configured event, searches players, fills safe controls, captures `*-before-submit.png`, and stops before the final button.
+- Add `--keep-open` to any browser command to keep the window open after success or failure for inspection; press Ctrl+C once to close it safely.
 - **Live:** requires the literal `--live` flag and a verified `UTR_EVENT_NAME`. Create/sync processes only `R16-1` on its first safety run. After confirming it in UTR, process the remaining ready rows with:
 
   ```bash
@@ -75,4 +76,4 @@ Unit/integration coverage uses Node's built-in test runner and includes CSV pars
 
 If the CLI reports that authentication is required, confirm `.env` contains `UTR_HEADLESS=false` and rerun the browser dry run. The CLI now clicks a visible Log in / Sign in control when one is available and monitors all browser tabs, including OAuth popup flows. Complete login in the browser window and leave it open; authentication is detected from UTR's accessible account controls or authenticated browser state, without reading or logging credential/token values. On a truly display-less Linux host, run the first login from a desktop machine or a legitimate remote desktop session using the same protected profile directory—do not copy credentials into configuration.
 
-For the configured draw, start with `npm run utr -- create matches.csv --browser-dry-run`. This opens the exact URL (including its draw/tab query parameters), discovers the controls that the authenticated account can access, and does not press a final create/save/publish button.
+For the configured draw, start with `npm run utr -- create matches.csv --browser-dry-run --keep-open`. This opens the exact URL (including its draw/tab query parameters), discovers the controls that the authenticated account can access, does not press a final create/save/publish button, and leaves the browser visible even if selector discovery fails. Press Ctrl+C in the terminal to close it.

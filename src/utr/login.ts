@@ -7,26 +7,16 @@ export function loginTimeout(value = process.env.UTR_LOGIN_TIMEOUT_MS): number {
   return Number.isFinite(parsed) && parsed >= 10_000 ? parsed : 600_000;
 }
 
-async function hasAuthenticationStorage(page: Page): Promise<boolean> {
-  return page.evaluate(() => {
-    const names = [...Object.keys(localStorage), ...Object.keys(sessionStorage)];
-    return names.some(name => /(auth|token|session|user)/i.test(name));
-  }).catch(() => false);
-}
-
-async function hasAuthenticationCookie(page: Page): Promise<boolean> {
-  const cookies = await page.context().cookies().catch(() => []);
-  return cookies.some(cookie => /(auth|token|session|jwt)/i.test(cookie.name) && Boolean(cookie.value));
-}
-
 async function authenticationState(page: Page): Promise<'authenticated'|'login'|'unknown'> {
   if (await firstVisible(page, SELECTORS.authenticated)) return 'authenticated';
   if (await firstVisible(page, SELECTORS.login)) return 'login';
   const pathname = new URL(page.url()).pathname.toLocaleLowerCase();
   if (/\/(login|signin|sign-in|auth)(\/|$)/.test(pathname)) return 'login';
-  if (await hasAuthenticationStorage(page) || await hasAuthenticationCookie(page)) return 'authenticated';
+  // Do not infer authentication from generic cookies/storage: analytics state
+  // exists for signed-out visitors and previously caused the browser to flash
+  // open, be treated as logged in, and immediately close on the next error.
   // UTR may remove the profile control at narrow breakpoints. An internal app
-  // route with a visible main region and no login control is a final safe signal.
+  // route with a visible main region and no login control is a safe fallback.
   if (pathname !== '/' && await page.getByRole('main').isVisible().catch(() => false)) return 'authenticated';
   return 'unknown';
 }
