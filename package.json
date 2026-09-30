@@ -1,0 +1,20 @@
+{
+  "name": "utr-tournament-automation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "utr": "node --experimental-strip-types src/cli.ts"
+  },
+  "dependencies": {
+    "playwright": "^1.55.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.1",
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2"
+  }
+}
