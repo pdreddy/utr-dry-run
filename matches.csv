@@ -1,0 +1,16 @@
+match_id,round,player_a,player_b,source_a,source_b,match_date,match_time,score,status
+R16-1,R16,Pranav V,Ridit Sarkar,,,,,,CREATE
+R16-2,R16,Iraj Kotru,Rithva Kanakaraj,,,,,,CREATE
+R16-3,R16,Pritish Singhal,Aarohi Mara,,,,,,CREATE
+R16-4,R16,Venkata Aarush Tellabati,Vansh Sambara,,,,,,CREATE
+R16-5,R16,Prajwal Aripaka,Venkata Ram Dheeraj Nagulakonda,,,,,,CREATE
+R16-6,R16,Ranveer Kalavakolanu,Saatvik Mishra,,,,,,CREATE
+R16-7,R16,Harsha Vennapusa,Dhruvin Saladi,,,,,,CREATE
+R16-8,R16,Sai Mukunth Kuppan,Viswesh Vasu,,,,,,CREATE
+QF1,QF,,,WINNER:R16-1,WINNER:R16-2,,,,WAITING
+QF2,QF,,,WINNER:R16-3,WINNER:R16-4,,,,WAITING
+QF3,QF,,,WINNER:R16-5,WINNER:R16-6,,,,WAITING
+QF4,QF,,,WINNER:R16-7,WINNER:R16-8,,,,WAITING
+SF1,SF,,,WINNER:QF1,WINNER:QF2,,,,WAITING
+SF2,SF,,,WINNER:QF3,WINNER:QF4,,,,WAITING
+FINAL,F,,,WINNER:SF1,WINNER:SF2,,,,WAITING
