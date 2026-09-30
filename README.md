@@ -10,7 +10,7 @@ npx playwright install chromium
 cp .env.example .env
 ```
 
-Set `UTR_EVENT_URL` (preferred) or `UTR_EVENT_ID`, plus the exact `UTR_EVENT_NAME`. Credentials do not belong in `.env`: on the first headed run, log in normally in Chrome and complete any legitimate MFA/CAPTCHA. The authenticated session is retained in `.playwright/utr-profile/`. Do not commit that directory.
+The supplied draw URL is stored in `utr.config.json`. `UTR_EVENT_URL` or `UTR_EVENT_ID` can override it, and live mode additionally requires the exact `UTR_EVENT_NAME` in `.env` or `eventName` in the config. Credentials do not belong in either file: on the first headed run, log in normally in Chrome and complete any legitimate MFA/CAPTCHA. The authenticated session is retained in `.playwright/utr-profile/`. Do not commit that directory.
 
 Leave `UTR_HEADLESS=false` for the first run. Headed mode is not inferred from `$DISPLAY` because Windows and macOS normally do not define it. The browser remains open for up to ten minutes (configurable with `UTR_LOGIN_TIMEOUT_MS`) so the account owner can complete legitimate login/MFA. Set `UTR_HEADLESS=true` only after the persistent profile has been authenticated.
 
@@ -74,3 +74,5 @@ Unit/integration coverage uses Node's built-in test runner and includes CSV pars
 ### Login troubleshooting
 
 If the CLI reports that authentication is required, confirm `.env` contains `UTR_HEADLESS=false` and rerun the browser dry run. Complete login in the browser window and leave that window open; the CLI detects the authenticated navigation and continues automatically. On a truly display-less Linux host, run the first login from a desktop machine or a legitimate remote desktop session using the same protected profile directory—do not copy credentials into configuration.
+
+For the configured draw, start with `npm run utr -- create matches.csv --browser-dry-run`. This opens the exact URL (including its draw/tab query parameters), discovers the controls that the authenticated account can access, and does not press a final create/save/publish button.

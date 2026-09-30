@@ -6,6 +6,7 @@ import { namesEqual } from '../src/utils/names.ts';
 import type { MatchRow } from '../src/models/match.ts';
 import { shouldRunHeadless } from '../src/utr/browser.ts';
 import { loginTimeout } from '../src/utr/login.ts';
+import { eventUrl } from '../src/utr/event.ts';
 
 const csv = `match_id,round,player_a,player_b,depends_on_a,depends_on_b,winner,score,status
 R1,R16,Alice Smith,Bob Jones,,,,,READY_TO_CREATE
@@ -54,5 +55,16 @@ describe('CSV and bracket automation', () => {
   });
   it('validates the manual login timeout', () => {
     assert.equal(loginTimeout('120000'), 120_000); assert.equal(loginTimeout('bad'), 600_000);
+  });
+  it('accepts only canonical UTR event URLs and preserves draw parameters', () => {
+    const oldUrl = process.env.UTR_EVENT_URL, oldId = process.env.UTR_EVENT_ID;
+    delete process.env.UTR_EVENT_URL; delete process.env.UTR_EVENT_ID;
+    try {
+      assert.equal(eventUrl({ eventUrl: 'https://app.utrsports.net/events/388079?d=draw&r=0&t=4' }), 'https://app.utrsports.net/events/388079?d=draw&r=0&t=4');
+      assert.throws(() => eventUrl({ eventUrl: 'https://example.com/events/388079' }), /UTR event URL/);
+    } finally {
+      if (oldUrl === undefined) delete process.env.UTR_EVENT_URL; else process.env.UTR_EVENT_URL = oldUrl;
+      if (oldId === undefined) delete process.env.UTR_EVENT_ID; else process.env.UTR_EVENT_ID = oldId;
+    }
   });
 });
