@@ -9,7 +9,9 @@ export const SELECTORS = {
   login: [
     'input[type="password"]', 'input[type="email"]',
     'button:has-text("Log in")', 'button:has-text("Sign in")',
-    'a:has-text("Log in")', 'a:has-text("Sign in")'
+    'a:has-text("Log in")', 'a:has-text("Sign in")',
+    'button:has-text("Login")', 'a:has-text("Login")',
+    'button:has-text("Join / Sign In")', 'a:has-text("Join / Sign In")'
   ],
   eventDesk: [
     'a:has-text("Event Desk")', 'button:has-text("Event Desk")',

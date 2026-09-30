@@ -58,9 +58,10 @@ async function browserRun(file: string, operation: 'create'|'scores'|'sync', opt
   const logger = new Logger();
   const session = await openSession();
   try {
-    const authenticated = await ensureAuthenticated(session.page);
-    console.log(`UTR LOGIN: ${authenticated ? 'PASS' : 'FAIL'}`);
-    if (!authenticated) throw new Error('Authentication required; rerun headed in an environment with a display to log in');
+    const authenticatedPage = await ensureAuthenticated(session.page);
+    console.log(`UTR LOGIN: ${authenticatedPage ? 'PASS' : 'FAIL'}`);
+    if (!authenticatedPage) throw new Error('Authentication was not detected before timeout; see screenshots/authentication-timeout.png');
+    session.page = authenticatedPage;
     const event = await openAndVerifyEvent(session.page, mode === 'live');
     console.log(`UTR EVENT:\n${event.name}\n\nEVENT VERIFIED: ${event.verified ? 'YES' : 'NO'}`);
     await discoverControls(session.page);

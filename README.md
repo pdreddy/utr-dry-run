@@ -73,6 +73,6 @@ Unit/integration coverage uses Node's built-in test runner and includes CSV pars
 
 ### Login troubleshooting
 
-If the CLI reports that authentication is required, confirm `.env` contains `UTR_HEADLESS=false` and rerun the browser dry run. Complete login in the browser window and leave that window open; the CLI detects the authenticated navigation and continues automatically. On a truly display-less Linux host, run the first login from a desktop machine or a legitimate remote desktop session using the same protected profile directory—do not copy credentials into configuration.
+If the CLI reports that authentication is required, confirm `.env` contains `UTR_HEADLESS=false` and rerun the browser dry run. The CLI now clicks a visible Log in / Sign in control when one is available and monitors all browser tabs, including OAuth popup flows. Complete login in the browser window and leave it open; authentication is detected from UTR's accessible account controls or authenticated browser state, without reading or logging credential/token values. On a truly display-less Linux host, run the first login from a desktop machine or a legitimate remote desktop session using the same protected profile directory—do not copy credentials into configuration.
 
 For the configured draw, start with `npm run utr -- create matches.csv --browser-dry-run`. This opens the exact URL (including its draw/tab query parameters), discovers the controls that the authenticated account can access, and does not press a final create/save/publish button.
