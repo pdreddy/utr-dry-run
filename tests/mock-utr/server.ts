@@ -100,38 +100,48 @@ function editorHtml(state: MockState): string {
     return card('qf', i, { ...slot, a: feed(0), b: feed(1) });
   }).join('');
   const r16 = state.editor.r16.map((slot, i) => card('r16', i, slot)).join('');
+  return `<section><h2>Round of 16</h2>${r16}</section><section><h2>Quarterfinals</h2>${qf}</section>`;
+}
+
+function editorPage(state: MockState): string {
   return `<!doctype html><html><head><title>${escapeHtml(state.eventName)} | UTR</title>
 <style>.cols{display:flex;gap:40px}.card{border:1px solid #ccc;margin:8px;padding:8px;width:340px}.slot{display:block;margin:4px 0}.set{margin-left:10px}
 .empty{color:#d0107c;cursor:pointer}ul.dd{border:1px solid #333;background:#fff;list-style:none;padding:0;margin:2px;max-height:160px;overflow:auto}ul.dd li{padding:4px;cursor:pointer}
 [role=dialog]{position:fixed;top:60px;left:420px;background:#fff;border:2px solid #333;padding:12px}</style></head>
 <body><header><a data-testid="user-menu" href="/profile/1">My profile</a></header>
 <h1>${escapeHtml(state.eventName)}</h1>
-<div><ul class="side"><li id="g1">Group 01</li><li id="po">Playoff</li></ul></div>
+<nav><button type="button" id="rail">Draws</button></nav><div><ul class="side" id="side" style="display:none"><li id="g1">Group 01</li><li id="po">Playoff</li></ul></div>
 <div id="groupView"><div>Round Robin, Co-ed, Two Sets w/ Match Tiebreaker, 8 Players</div><h2>Round 1</h2>
   <div class="card"><span class="mn">Match #1</span><div class="slot">Pritish Singhal</div><div class="slot">Bye</div><button type="button">Score</button></div></div>
 <div id="playoffView" style="display:none"><div>Single Elimination, Co-ed, Two Sets w/ Match Tiebreaker, 16 Players</div><span id="saved">Saved</span> <button type="button" id="publish">PUBLISH</button>
-<div class="cols"><section><h2>Round of 16</h2>${r16}</section><section><h2>Quarterfinals</h2>${qf}</section></div></div>
+<div class="cols">${editorHtml(state)}</div></div>
 <script>
 // Like the real editor, a fresh load always shows the default draw (Group 01) until Playoff is chosen.
+document.getElementById('rail').onclick = () => { const l = document.getElementById('side'); l.style.display = l.style.display === 'none' ? 'block' : 'none'; };
 document.getElementById('po').onclick = () => { document.getElementById('groupView').style.display = 'none'; document.getElementById('playoffView').style.display = 'block'; };
 const call = (method, url, body) => fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(async r => { if (!r.ok) throw new Error(await r.text()); return r.json(); });
-document.getElementById('publish').onclick = () => call('POST', '/api/v1/draw/publish', {}).then(() => location.reload());
-document.querySelectorAll('.empty').forEach(el => el.onclick = async () => {
-  document.querySelectorAll('ul.dd').forEach(x => x.remove());
-  const card = el.closest('.card'); const names = await fetch('/api/v1/players?query=%20%20').then(r => r.json());
-  const list = document.createElement('ul'); list.className = 'dd';
-  names.forEach(p => { const li = document.createElement('li'); li.textContent = p.name + '\\n' + p.rating;
-    li.onclick = () => call('PUT', '/api/v1/draw/' + card.dataset.round + '/' + card.dataset.n + '/slot', { slot: el.dataset.slot, name: p.name }).then(() => location.reload()); list.append(li); });
-  el.after(list);
-});
-document.querySelectorAll('.scorebtn').forEach(button => button.onclick = () => {
-  const d = document.createElement('div'); d.setAttribute('role', 'dialog');
-  let html = '<h2>Score</h2>'; for (let s = 0; s < 3; s++) html += '<div><input type="number"> <input type="number"></div>';
-  d.innerHTML = html + '<button type="button" id="savescore">Save</button>'; document.body.append(d);
-  d.querySelector('#savescore').onclick = () => { const inputs = [...d.querySelectorAll('input')]; const sets = [];
-    for (let s = 0; s < 3; s++) if (inputs[s*2].value !== '' && inputs[s*2+1].value !== '') sets.push({ a: Number(inputs[s*2].value), b: Number(inputs[s*2+1].value) });
-    call('PUT', '/api/v1/draw/' + button.dataset.round + '/' + button.dataset.n + '/score', { sets }).then(() => location.reload()).catch(e => alert(e.message)); };
-});
+document.getElementById('publish').onclick = () => call('POST', '/api/v1/draw/publish', {}).then(refresh);
+// Like the real editor's autosave, a slot pick or score save updates the bracket in place, with no page reload.
+async function refresh() { document.querySelector('.cols').innerHTML = (await fetch('/api/v1/draw/fragment').then(r => r.json())).html; bind(); }
+function bind() {
+  document.querySelectorAll('.empty').forEach(el => el.onclick = async () => {
+    document.querySelectorAll('ul.dd').forEach(x => x.remove());
+    const card = el.closest('.card'); const names = await fetch('/api/v1/players?query=%20%20').then(r => r.json());
+    const list = document.createElement('ul'); list.className = 'dd';
+    names.forEach(p => { const li = document.createElement('li'); li.textContent = p.name + '\\n' + p.rating;
+      li.onclick = () => call('PUT', '/api/v1/draw/' + card.dataset.round + '/' + card.dataset.n + '/slot', { slot: el.dataset.slot, name: p.name }).then(refresh); list.append(li); });
+    el.after(list);
+  });
+  document.querySelectorAll('.scorebtn').forEach(button => button.onclick = () => {
+    const d = document.createElement('div'); d.setAttribute('role', 'dialog');
+    let html = '<h2>Score</h2>'; for (let s = 0; s < 3; s++) html += '<div><input type="number"> <input type="number"></div>';
+    d.innerHTML = html + '<button type="button" id="savescore">Save</button>'; document.body.append(d);
+    d.querySelector('#savescore').onclick = () => { const inputs = [...d.querySelectorAll('input')]; const sets = [];
+      for (let s = 0; s < 3; s++) if (inputs[s*2].value !== '' && inputs[s*2+1].value !== '') sets.push({ a: Number(inputs[s*2].value), b: Number(inputs[s*2+1].value) });
+      call('PUT', '/api/v1/draw/' + button.dataset.round + '/' + button.dataset.n + '/score', { sets }).then(() => { d.remove(); refresh(); }).catch(e => alert(e.message)); };
+  });
+}
+bind();
 </script></body></html>`;
 }
 
@@ -153,7 +163,8 @@ export async function startMockUtr(port = 0): Promise<{ origin: string; eventUrl
     try {
       if (req.method !== 'GET') state.writes.push({ method: req.method!, path: url.pathname });
       if (req.method === 'GET' && url.pathname === `/events/${EVENT_ID}`) return send(200, eventHtml(state), 'text/html');
-      if (req.method === 'GET' && url.pathname === `/events/${EVENT_ID}/draws`) return send(200, editorHtml(state), 'text/html');
+      if (req.method === 'GET' && url.pathname === `/events/${EVENT_ID}/draws`) return send(200, editorPage(state), 'text/html');
+      if (req.method === 'GET' && url.pathname === '/api/v1/draw/fragment') return send(200, { html: editorHtml(state) });
       if (req.method === 'POST' && url.pathname === '/api/v1/draw/publish') { state.editor.published = true; return send(200, { ok: true }); }
       const slotRoute = url.pathname.match(/^\/api\/v1\/draw\/(r16|qf)\/(\d+)\/(slot|score)$/);
       if (req.method === 'PUT' && slotRoute) {

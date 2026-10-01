@@ -52,14 +52,32 @@ export class UtrDrawEditor {
     ]).catch(() => undefined);
     await this.page.waitForTimeout(1_000);
     if (await onBracket()) return;
-    const candidates = this.page.getByText(name, { exact: true });
-    const found: { item: Locator; x: number }[] = [];
-    for (let i = 0; i < await candidates.count(); i++) {
-      const item = candidates.nth(i);
-      const box = await item.boundingBox().catch(() => null);
-      if (box && await item.isVisible().catch(() => false)) found.push({ item, x: box.x });
+    const collect = async () => {
+      const candidates = this.page.getByText(name, { exact: true });
+      const list: { item: Locator; x: number }[] = [];
+      for (let i = 0; i < await candidates.count(); i++) {
+        const item = candidates.nth(i);
+        const box = await item.boundingBox().catch(() => null);
+        if (box && await item.isVisible().catch(() => false)) list.push({ item, x: box.x });
+      }
+      return list.sort((p, q) => p.x - q.x);
+    };
+    let found = await collect();
+    if (!found.length) {
+      // The draw list is collapsed until the rail's "Draws" button is clicked.
+      const rail = this.page.getByText('Draws', { exact: true });
+      let railButton: Locator | undefined, railX = Infinity;
+      for (let i = 0; i < await rail.count(); i++) {
+        const box = await rail.nth(i).boundingBox().catch(() => null);
+        if (box && await rail.nth(i).isVisible().catch(() => false) && box.x < railX) { railButton = rail.nth(i); railX = box.x; }
+      }
+      if (railButton) {
+        console.log('DRAW SELECT: opening the Draws list');
+        await this.safeClick(railButton);
+        await this.page.waitForTimeout(800);
+        found = await collect();
+      }
     }
-    found.sort((p, q) => p.x - q.x);
     console.log(`DRAW SELECT: looking for "${name}" in the draw list: ${found.length} visible match(es)`);
     if (!found.length) {
       await screenshot(this.page, 'draw-editor-draw-not-found');
@@ -140,9 +158,11 @@ export class UtrDrawEditor {
       return { texts, choose: async index => { await native.selectOption({ index }); } };
     }
     const slot = card.getByText(EDITOR.emptySlot, { exact: true }).first();
-    const slotBox = await slot.boundingBox();
+    // Read the box only after the click: click() scrolls the slot into view first,
+    // which shifts every other element's Y coordinate on the page.
     await this.safeClick(slot);
     await this.page.waitForTimeout(400);
+    const slotBox = await slot.boundingBox();
     const aria = this.page.getByRole('option');
     const candidates = await aria.count() ? aria : this.page.locator('[role="listbox"] li:visible, ul li:visible, [class*="option" i]:visible');
     const kept: Locator[] = [];

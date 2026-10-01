@@ -119,8 +119,11 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
       const results: string[] = [];
       try {
         if (operation !== 'scores') {
-          // Reload for every match so an unsubmitted dry-run dialog never carries over.
-          await eventPage.open();
+          // The event page is cheap to reload before every match, so an unsubmitted dry-run
+          // dialog never carries over. The draw editor stays open across rows instead: reloading
+          // it means re-selecting the draw from its sidebar every time, and it already reloads
+          // itself after every live write (see UtrDrawEditor.createMatch/enterScore).
+          if (!(eventPage instanceof UtrDrawEditor)) await eventPage.open();
           const prepared = await eventPage.createMatch(row, mode === 'live');
           results.push(prepared.result.startsWith('NEEDS_REVIEW') ? 'NEEDS_REVIEW' : prepared.result);
           console.log(`${row.match_id} ${row.player_a} vs ${row.player_b}: ${prepared.result}`);
@@ -133,7 +136,7 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
         }
         // A match previewed but not submitted in a browser dry run cannot be scored yet.
         if (row.score && operation !== 'create' && results[0] !== 'NOT_SUBMITTED') {
-          await eventPage.open();
+          if (!(eventPage instanceof UtrDrawEditor)) await eventPage.open();
           const scored = await eventPage.enterScore(row, mode === 'live');
           results.push(scored.startsWith('NEEDS_REVIEW') ? 'NEEDS_REVIEW' : scored);
           console.log(`${row.match_id} score ${row.score}: ${scored}`);
