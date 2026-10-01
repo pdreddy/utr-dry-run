@@ -8,7 +8,7 @@ import type { MatchRow } from './models/match.ts';
 import { Logger } from './utils/logger.ts';
 import { openSession } from './utr/browser.ts';
 import { ensureAuthenticated } from './utr/login.ts';
-import { eventUrl, openAndVerifyEvent } from './utr/event.ts';
+import { eventUrl, openAndVerifyEvent, siteOrigin } from './utr/event.ts';
 import { discoverControls } from './utr/discovery.ts';
 import { UtrEventPage } from './utr/eventPage.ts';
 import { recordApiCalls } from './utr/network.ts';
@@ -71,11 +71,16 @@ export function selectRows(rows: MatchRow[], operation: Operation, mode: 'dry'|'
 async function withBrowser<T>(options: ModeOptions, work: (page: import('playwright').Page) => Promise<T>): Promise<T> {
   const session = await openSession();
   try {
+    console.log(`Opening ${siteOrigin()} ...`);
     const authenticatedPage = await ensureAuthenticated(session.page);
     console.log(`UTR LOGIN: ${authenticatedPage ? 'PASS' : 'FAIL'}`);
     if (!authenticatedPage) throw new Error('Authentication was not detected before timeout; see screenshots/authentication-timeout.png');
     session.page = authenticatedPage;
     return await work(session.page);
+  } catch (error) {
+    // Show the reason immediately; --keep-open would otherwise hold it back until Ctrl+C.
+    console.error(`\nFAILED: ${(error as Error).message}`);
+    throw error;
   } finally {
     if (options.keepOpen) {
       console.log('KEEP OPEN: Browser will remain open for inspection. Press Ctrl+C once to close it safely.');

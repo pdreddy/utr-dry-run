@@ -30,7 +30,11 @@ async function authenticatedPage(pages: Page[]): Promise<Page | undefined> {
 }
 
 export async function ensureAuthenticated(page: Page): Promise<Page | undefined> {
-  await page.goto(siteOrigin(), { waitUntil: 'domcontentloaded', timeout: 45_000 });
+  try {
+    await page.goto(siteOrigin(), { waitUntil: 'domcontentloaded', timeout: 45_000 });
+  } catch (error) {
+    throw new Error(`Could not load ${siteOrigin()} (${(error as Error).message.split('\n')[0]}). Check your internet/VPN/proxy, or try UTR_BROWSER_CHANNEL=chrome in .env to use installed Google Chrome.`);
+  }
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
   const existing = await authenticatedPage(page.context().pages());
   if (existing) return existing;
