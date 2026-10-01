@@ -36,6 +36,7 @@ Usage: ./run.sh <command> [extra args]
   scores           LIVE: enter all scores recorded in matches.csv
   sync             LIVE: enter scores AND create the next round's matches
   reset-browser    Close a stuck automation browser (fixes "profile is already in use")
+  inspect          Save the page structure of what you are looking at (to fit selectors; saves nothing in UTR)
   capture          Record UTR's own web calls while you do one match + one score by hand
   test             Unit tests + typecheck
   test-e2e         Full 15-match event against the local UTR mock
@@ -61,6 +62,7 @@ case "$cmd" in
   scores-dry-run)  need_env; free_profile; utr scores "$CSV" --browser-dry-run --keep-open "$@" ;;
   scores)          need_env; free_profile; utr scores "$CSV" --live --all "$@" ;;
   sync)            need_env; free_profile; utr sync "$CSV" --live --all "$@" ;;
+  inspect)         need_env; free_profile; UTR_HEADLESS=false utr inspect "$CSV" "$@" ;;
   capture)         need_env; free_profile; UTR_HEADLESS=false utr capture "$CSV" "$@" ;;
   test)            npm test && npx tsc --noEmit -p . ;;
   test-e2e)        npm run test:e2e ;;

@@ -12,6 +12,8 @@ import { eventUrl, openAndVerifyEvent, siteOrigin } from './utr/event.ts';
 import { discoverControls } from './utr/discovery.ts';
 import { UtrEventPage } from './utr/eventPage.ts';
 import { recordApiCalls } from './utr/network.ts';
+import { inspectPage } from './utr/inspect.ts';
+import readline from 'node:readline/promises';
 
 type ModeOptions = { dryRun?: boolean; browserDryRun?: boolean; live?: boolean; all?: boolean; keepOpen?: boolean; only?: string };
 type Operation = 'create'|'scores'|'sync';
@@ -160,12 +162,35 @@ async function capture(options: ModeOptions): Promise<void> {
   });
 }
 
+/** Interactive: the account owner navigates to a view, presses Enter, and the page structure is saved. */
+async function inspect(options: ModeOptions): Promise<void> {
+  await withBrowser({ ...options, keepOpen: false }, async page => {
+    const event = await openAndVerifyEvent(page, false);
+    console.log(`UTR EVENT: ${event.name}`);
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const steps = ['matchups', 'playoff', 'match-menu', 'dialog'];
+    const prompts: Record<string, string> = {
+      matchups: 'Go to MATCHUPS and show a round with matches',
+      playoff: 'Switch to the PLAYOFF section (open the Group/Division dropdown to its playoff option)',
+      'match-menu': 'Click the three-dot menu on one playoff match so its options are showing',
+      dialog: 'Open the add-match / enter-score screen if there is one (do NOT save anything)'
+    };
+    for (const step of steps) {
+      const answer = await rl.question(`\n${prompts[step]}, then press Enter here (type "skip" to skip this step, "done" to finish)... `);
+      if (answer.trim() === 'done') break;
+      if (answer.trim() === 'skip') continue;
+      console.log(`SAVED: ${await inspectPage(page, step)}`);
+    }
+    rl.close();
+  });
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const command = args[0];
   const file = args[1] && !args[1].startsWith('--') ? args[1] : 'matches.csv';
-  if (!command || !['validate', 'plan', 'create', 'scores', 'sync', 'capture'].includes(command)) {
-    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync|capture> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all|--only <match_id>] [--keep-open]');
+  if (!command || !['validate', 'plan', 'create', 'scores', 'sync', 'capture', 'inspect'].includes(command)) {
+    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync|capture|inspect> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all|--only <match_id>] [--keep-open]');
   }
   if (command === 'validate') { console.log(`VALID: ${load(file).rows.length} matches`); return; }
   if (command === 'plan') { printPlan(load(file).rows); return; }
@@ -175,6 +200,7 @@ async function main(): Promise<void> {
     only: args.includes('--only') ? args[args.indexOf('--only') + 1] : undefined
   };
   if (command === 'capture') { await capture(options); return; }
+  if (command === 'inspect') { await inspect(options); return; }
   if (options.only !== undefined && (!options.only || options.only.startsWith('--'))) throw new Error('--only requires a match_id');
   if (options.only && options.all) throw new Error('Use either --only or --all, not both');
   await browserRun(file, command as Operation, options);
