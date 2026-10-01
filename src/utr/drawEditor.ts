@@ -44,25 +44,39 @@ export class UtrDrawEditor {
    * draw (often Group 01), so pick the draw by name from the sidebar instead.
    */
   async ensureDraw(name = process.env.UTR_DRAW_NAME || 'Playoff'): Promise<void> {
-    if (await this.page.getByText(/^Round of 16/).first().isVisible().catch(() => false)) return;
+    const onBracket = () => this.page.getByText(/^Round of 16/).first().isVisible().catch(() => false);
+    if (await onBracket()) return;
     const candidates = this.page.getByText(name, { exact: true });
-    let best: Locator | undefined, bestX = Infinity;
+    const found: { item: Locator; x: number }[] = [];
     for (let i = 0; i < await candidates.count(); i++) {
       const item = candidates.nth(i);
       const box = await item.boundingBox().catch(() => null);
-      if (box && await item.isVisible().catch(() => false) && box.x < bestX) { best = item; bestX = box.x; }
+      if (box && await item.isVisible().catch(() => false)) found.push({ item, x: box.x });
     }
-    if (!best) throw new Error(`Draw "${name}" was not found in the editor's draw list`);
-    await this.safeClick(best);
-    await this.page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
-    await this.page.getByText(/^Round of 16/).first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => undefined);
-    await this.page.waitForTimeout(500);
+    found.sort((p, q) => p.x - q.x);
+    console.log(`DRAW SELECT: looking for "${name}" in the draw list: ${found.length} visible match(es)`);
+    if (!found.length) {
+      await screenshot(this.page, 'draw-editor-draw-not-found');
+      throw new Error(`Draw "${name}" was not found in the editor's draw list (screenshot: draw-editor-draw-not-found.png)`);
+    }
+    // Click the label; if the bracket does not appear, try its row, then its container.
+    for (const target of [found[0]!.item, found[0]!.item.locator('xpath=..'), found[0]!.item.locator('xpath=../..')]) {
+      await this.safeClick(target);
+      await this.page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
+      await this.page.getByText(/^Round of 16/).first().waitFor({ state: 'visible', timeout: 8_000 }).catch(() => undefined);
+      if (await onBracket()) { console.log(`DRAW SELECT: "${name}" opened`); await this.page.waitForTimeout(500); return; }
+    }
+    console.log(`DRAW SELECT: clicked "${name}" but the Round of 16 bracket did not appear`);
   }
 
   /** Throws unless the page looks like the expected single-elimination draw. */
   async verifyDraw(expected = process.env.UTR_DRAW_NAME || 'Playoff'): Promise<string> {
     const text = await this.page.locator('body').innerText();
-    if (!/Round of 16/i.test(text)) throw new Error('This is not the Round of 16 bracket; check the draw id in utr.config.json');
+    if (!/Round of 16/i.test(text)) {
+      await screenshot(this.page, 'draw-editor-wrong-draw');
+      const seen = text.split('\n').map(l => l.trim()).filter(l => /round|elimination|robin|group|playoff/i.test(l)).slice(0, 12).join(' | ');
+      throw new Error(`This is not the Round of 16 bracket for "${expected}". The page shows: ${seen || 'no draw information'} (screenshot: draw-editor-wrong-draw.png)`);
+    }
     const description = text.match(/(Single Elimination|Round Robin)[^\n]*/i)?.[0] ?? '';
     if (!/Single Elimination/i.test(description)) throw new Error(`Expected a single-elimination draw but found "${description || 'unknown'}"`);
     if (expected && !text.includes(expected)) throw new Error(`Draw "${expected}" is not listed on this page`);
