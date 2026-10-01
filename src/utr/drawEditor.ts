@@ -155,6 +155,28 @@ export class UtrDrawEditor {
   }
 
   /**
+   * A missing sidebar row can mean the player has already been added, because UTR
+   * removes rostered players from "Players not in draw". Confirm that state from
+   * an occupied bracket card or an empty slot's roster-only picker before calling
+   * the CSV name missing.
+   */
+  private async playerInDraw(name: string): Promise<'exact'|'ambiguous'|'missing'> {
+    let emptyCard: Locator | undefined;
+    for (let n = 1; n <= 8; n++) {
+      const card = await this.matchCard(n);
+      if (!card) continue;
+      const text = await this.cardText(card);
+      if (playerLine(text, name) >= 0) return 'exact';
+      if (!emptyCard && text.includes(EDITOR.emptySlot)) emptyCard = card;
+    }
+    if (!emptyCard) return 'missing';
+    const { texts } = await this.searchSlot(emptyCard, name.split(' ')[0] ?? name);
+    const count = texts.filter(text => lineNamesPlayer(text.split('\n')[0] ?? text, name)).length;
+    await this.page.keyboard.press('Escape');
+    return count === 1 ? 'exact' : count > 1 ? 'ambiguous' : 'missing';
+  }
+
+  /**
    * UTR's match-card "Select a player" picker only searches players already on this
    * draw's roster (the left sidebar's "Players not in draw" list; it shows "No players
    * to add..." for everyone else, however they are typed). This adds each name's row
@@ -170,7 +192,13 @@ export class UtrDrawEditor {
     }
     for (const name of [...new Set(names)]) {
       const found = await this.searchRoster(name);
-      if (found.status === 'missing') { results[name] = 'NEEDS_REVIEW: not found in "Players not in draw"'; continue; }
+      if (found.status === 'missing') {
+        const inDraw = await this.playerInDraw(name);
+        if (inDraw === 'exact') { results[name] = 'already in draw'; continue; }
+        if (inDraw === 'ambiguous') { results[name] = 'NEEDS_REVIEW: ambiguous in draw roster'; continue; }
+        results[name] = 'NEEDS_REVIEW: not found in "Players not in draw" or the draw roster';
+        continue;
+      }
       if (found.status === 'ambiguous') { results[name] = 'NEEDS_REVIEW: ambiguous in "Players not in draw"'; continue; }
       if (!live) { results[name] = 'found'; continue; }
       const row = found.row!;

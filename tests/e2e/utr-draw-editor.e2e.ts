@@ -76,6 +76,8 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 600
   it('--all fills the other seven matches in the right slots, skipping Match #1', async () => {
     const { code, out } = await cli(['create', csv, '--live', '--all']);
     assert.equal(code, 0, out);
+    assert.match(out, /ROSTER Pranav Vommi: already in draw/);
+    assert.match(out, /ROSTER Iraj Kotru: already in draw/);
     assert.match(out, /SKIP_ALREADY_EXISTS=1/);
     assert.match(out, /CREATED=7/);
     const expected = readMatches(csv).filter(r => r.round === 'R16').map(r => [r.player_a, r.player_b]);
