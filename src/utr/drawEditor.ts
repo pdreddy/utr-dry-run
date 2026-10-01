@@ -33,9 +33,30 @@ export class UtrDrawEditor {
     await this.page.goto(this.url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
     await this.page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
     await this.page.getByText(/^Match #\d+/).first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => undefined);
+    await this.ensureDraw();
     if (await this.page.locator('[data-testid="modal.login-popup.overlay"]').isVisible().catch(() => false)) {
       throw new Error('UTR is showing its login pop-up: the session is not logged in');
     }
+  }
+
+  /**
+   * The editor ignores the `d=` draw id on a direct load and shows its own default
+   * draw (often Group 01), so pick the draw by name from the sidebar instead.
+   */
+  async ensureDraw(name = process.env.UTR_DRAW_NAME || 'Playoff'): Promise<void> {
+    if (await this.page.getByText(/^Round of 16/).first().isVisible().catch(() => false)) return;
+    const candidates = this.page.getByText(name, { exact: true });
+    let best: Locator | undefined, bestX = Infinity;
+    for (let i = 0; i < await candidates.count(); i++) {
+      const item = candidates.nth(i);
+      const box = await item.boundingBox().catch(() => null);
+      if (box && await item.isVisible().catch(() => false) && box.x < bestX) { best = item; bestX = box.x; }
+    }
+    if (!best) throw new Error(`Draw "${name}" was not found in the editor's draw list`);
+    await this.safeClick(best);
+    await this.page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
+    await this.page.getByText(/^Round of 16/).first().waitFor({ state: 'visible', timeout: 15_000 }).catch(() => undefined);
+    await this.page.waitForTimeout(500);
   }
 
   /** Throws unless the page looks like the expected single-elimination draw. */
@@ -157,6 +178,7 @@ export class UtrDrawEditor {
       await this.waitForSaved();
     }
     if (!hasB) {
+      await this.ensureDraw();
       const fresh = (await this.matchCard(n))!;
       b = await this.fillSlot(fresh, row.player_b);
       if (b === 'missing' || b === 'ambiguous') return { result: `NEEDS_REVIEW: player B ${b}`, playerA: a, playerB: b };

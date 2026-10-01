@@ -105,10 +105,15 @@ function editorHtml(state: MockState): string {
 .empty{color:#d0107c;cursor:pointer}ul.dd{border:1px solid #333;background:#fff;list-style:none;padding:0;margin:2px;max-height:160px;overflow:auto}ul.dd li{padding:4px;cursor:pointer}
 [role=dialog]{position:fixed;top:60px;left:420px;background:#fff;border:2px solid #333;padding:12px}</style></head>
 <body><header><a data-testid="user-menu" href="/profile/1">My profile</a></header>
-<h1>${escapeHtml(state.eventName)}</h1><div>Single Elimination, Co-ed, Two Sets w/ Match Tiebreaker, 16 Players</div>
-<div><ul><li>Group 01</li><li>Playoff</li></ul></div><span id="saved">Saved</span> <button type="button" id="publish">PUBLISH</button>
-<div class="cols"><section><h2>Round of 16</h2>${r16}</section><section><h2>Quarterfinals</h2>${qf}</section></div>
+<h1>${escapeHtml(state.eventName)}</h1>
+<div><ul class="side"><li id="g1">Group 01</li><li id="po">Playoff</li></ul></div>
+<div id="groupView"><div>Round Robin, Co-ed, Two Sets w/ Match Tiebreaker, 8 Players</div><h2>Round 1</h2>
+  <div class="card"><span class="mn">Match #1</span><div class="slot">Pritish Singhal</div><div class="slot">Bye</div><button type="button">Score</button></div></div>
+<div id="playoffView" style="display:none"><div>Single Elimination, Co-ed, Two Sets w/ Match Tiebreaker, 16 Players</div><span id="saved">Saved</span> <button type="button" id="publish">PUBLISH</button>
+<div class="cols"><section><h2>Round of 16</h2>${r16}</section><section><h2>Quarterfinals</h2>${qf}</section></div></div>
 <script>
+// Like the real editor, a fresh load always shows the default draw (Group 01) until Playoff is chosen.
+document.getElementById('po').onclick = () => { document.getElementById('groupView').style.display = 'none'; document.getElementById('playoffView').style.display = 'block'; };
 const call = (method, url, body) => fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(async r => { if (!r.ok) throw new Error(await r.text()); return r.json(); });
 document.getElementById('publish').onclick = () => call('POST', '/api/v1/draw/publish', {}).then(() => location.reload());
 document.querySelectorAll('.empty').forEach(el => el.onclick = async () => {
