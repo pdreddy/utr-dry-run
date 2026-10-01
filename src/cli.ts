@@ -10,10 +10,11 @@ import { openSession } from './utr/browser.ts';
 import { ensureAuthenticated } from './utr/login.ts';
 import { eventUrl, openAndVerifyEvent } from './utr/event.ts';
 import { discoverControls } from './utr/discovery.ts';
-import { prepareMatch } from './utr/matches.ts';
-import { prepareScore } from './utr/scores.ts';
+import { UtrEventPage } from './utr/eventPage.ts';
+import { recordApiCalls } from './utr/network.ts';
 
-type ModeOptions = { dryRun?: boolean; browserDryRun?: boolean; live?: boolean; all?: boolean; keepOpen?: boolean };
+type ModeOptions = { dryRun?: boolean; browserDryRun?: boolean; live?: boolean; all?: boolean; keepOpen?: boolean; only?: string };
+type Operation = 'create'|'scores'|'sync';
 
 function loadDotEnv(): void {
   if (!fs.existsSync('.env')) return;
@@ -46,63 +47,35 @@ function printPlan(rows: MatchRow[]): void {
       console.log('STATUS: WAITING_FOR_WINNERS');
     } else {
       console.log(`${row.player_a} vs ${row.player_b}`);
-      console.log(row.score ? 'ACTION: UPDATE_SCORE' : row.utr_match_id || row.utr_match_url ? 'ACTION: SKIP_ALREADY_EXISTS' : 'ACTION: CREATE_MATCH');
+      const exists = row.utr_match_id || row.utr_match_url;
+      const actions = [exists ? 'SKIP_ALREADY_EXISTS' : 'CREATE_MATCH'];
+      if (row.score) actions.push(row.utr_sync_status === 'SCORE_SYNCED' ? 'SCORE_ALREADY_SYNCED' : 'UPDATE_SCORE');
+      console.log(`ACTION: ${actions.join(' + ')}`);
     }
   }
 }
 
-async function browserRun(file: string, operation: 'create'|'scores'|'sync', options: ModeOptions): Promise<void> {
-  const mode = requireMode(options);
-  const { file: absolute, rows } = load(file);
-  if (mode === 'dry') { printPlan(operation === 'scores' ? rows.filter(r => r.score) : rows); return; }
-  const logger = new Logger();
+/** Live mode touches one match unless --all is given: --only <id>, else the first eligible row. */
+export function selectRows(rows: MatchRow[], operation: Operation, mode: 'dry'|'browser'|'live', options: ModeOptions): MatchRow[] {
+  const candidates = rows.filter(r => r.status !== 'WAITING_FOR_WINNERS' && (operation !== 'scores' || r.score));
+  if (options.only) {
+    const chosen = candidates.filter(r => r.match_id === options.only);
+    if (!chosen.length) throw new Error(`--only ${options.only} is not an eligible match for ${operation}`);
+    return chosen;
+  }
+  if (mode !== 'live' || options.all) return candidates;
+  const pending = candidates.filter(r => operation === 'scores' ? r.utr_sync_status !== 'SCORE_SYNCED' : !(r.utr_match_id || r.utr_match_url) || (operation === 'sync' && r.score && r.utr_sync_status !== 'SCORE_SYNCED'));
+  return pending.slice(0, 1);
+}
+
+async function withBrowser<T>(options: ModeOptions, work: (page: import('playwright').Page) => Promise<T>): Promise<T> {
   const session = await openSession();
   try {
     const authenticatedPage = await ensureAuthenticated(session.page);
     console.log(`UTR LOGIN: ${authenticatedPage ? 'PASS' : 'FAIL'}`);
     if (!authenticatedPage) throw new Error('Authentication was not detected before timeout; see screenshots/authentication-timeout.png');
     session.page = authenticatedPage;
-    const event = await openAndVerifyEvent(session.page, mode === 'live');
-    console.log(`UTR EVENT:\n${event.name}\n\nEVENT VERIFIED: ${event.verified ? 'YES' : 'NO'}`);
-    await discoverControls(session.page);
-    const candidates = rows.filter(r => r.status !== 'WAITING_FOR_WINNERS' && (operation !== 'scores' || r.score));
-    const limited = mode === 'live' && operation !== 'scores' && !options.all ? candidates.filter(r => r.match_id === 'R16-1').slice(0, 1) : candidates;
-    for (const row of limited) {
-      let result: string;
-      try {
-        if (operation === 'scores' || (operation === 'sync' && row.score)) {
-          result = await prepareScore(session.page, row, mode === 'live');
-          if (result === 'SCORE_SYNCED') { row.utr_sync_status = result; row.utr_synced_at = new Date().toISOString(); }
-        } else {
-          // Reopen the verified event for every match, clearing any unsubmitted dry-run dialog.
-          if (eventUrl()) await session.page.goto(eventUrl()!, { waitUntil: 'domcontentloaded' });
-          const prepared = await prepareMatch(session.page, row, mode === 'live');
-          result = prepared.result;
-          console.log(`${row.match_id} ${result}`);
-          console.log(`PLAYER A MATCHED: ${prepared.playerA ?? 'not checked'}`);
-          console.log(`PLAYER B MATCHED: ${prepared.playerB ?? 'not checked'}`);
-          if (prepared.playerA && prepared.playerB) console.log('FORM POPULATED');
-          console.log(`SUBMIT AVAILABLE: ${prepared.submitAvailable ? 'YES' : 'NO'}`);
-          if (mode === 'browser') console.log('NOT SUBMITTED');
-          if (prepared.utrMatchId) row.utr_match_id = prepared.utrMatchId;
-          if (prepared.utrMatchUrl) row.utr_match_url = prepared.utrMatchUrl;
-          if (result === 'CREATED') { row.utr_sync_status = 'MATCH_CREATED'; row.utr_synced_at = new Date().toISOString(); }
-        }
-      } catch (error) {
-        result = 'NEEDS_REVIEW';
-        row.utr_sync_status = result;
-        logger.log({ ...row, action: operation, result, error: (error as Error).message });
-        console.error(`${row.match_id} NEEDS_REVIEW: ${(error as Error).message}`);
-        if (mode === 'live') writeMatches(absolute, rows);
-        continue;
-      }
-      logger.log({ ...row, action: operation, result, utr_match_id: row.utr_match_id || undefined });
-      if (result.startsWith('NEEDS_REVIEW')) row.utr_sync_status = 'NEEDS_REVIEW';
-      if (mode === 'live') writeMatches(absolute, rows);
-      if (mode === 'live' && row.match_id === 'R16-1' && result === 'CREATED') {
-        console.log(`LIVE TEST PASSED\n\nR16-1 successfully created.\nUTR match ID: ${row.utr_match_id || 'not exposed'}\nUTR URL: ${row.utr_match_url}`);
-      }
-    }
+    return await work(session.page);
   } finally {
     if (options.keepOpen) {
       console.log('KEEP OPEN: Browser will remain open for inspection. Press Ctrl+C once to close it safely.');
@@ -116,20 +89,92 @@ async function browserRun(file: string, operation: 'create'|'scores'|'sync', opt
   }
 }
 
+async function browserRun(file: string, operation: Operation, options: ModeOptions): Promise<void> {
+  const mode = requireMode(options);
+  const { file: absolute, rows } = load(file);
+  const selected = selectRows(rows, operation, mode, options);
+  if (mode === 'dry') { printPlan(selected); return; }
+  const logger = new Logger();
+  const totals: Record<string, number> = {};
+  await withBrowser(options, async page => {
+    const event = await openAndVerifyEvent(page, mode === 'live');
+    console.log(`UTR EVENT:\n${event.name}\n\nEVENT VERIFIED: ${event.verified ? 'YES' : 'NO'}`);
+    await discoverControls(page);
+    const eventPage = new UtrEventPage(page, eventUrl()!);
+    if (mode === 'live' && !options.all && !options.only) console.log(`LIVE SAFETY GATE: processing ${selected.length} match(es). Confirm in UTR, then re-run with --all.`);
+    for (const row of selected) {
+      const results: string[] = [];
+      try {
+        if (operation !== 'scores') {
+          // Reload for every match so an unsubmitted dry-run dialog never carries over.
+          await eventPage.open();
+          const prepared = await eventPage.createMatch(row, mode === 'live');
+          results.push(prepared.result.startsWith('NEEDS_REVIEW') ? 'NEEDS_REVIEW' : prepared.result);
+          console.log(`${row.match_id} ${row.player_a} vs ${row.player_b}: ${prepared.result}`);
+          if (prepared.playerA) console.log(`  PLAYER A MATCHED: ${prepared.playerA}\n  PLAYER B MATCHED: ${prepared.playerB}`);
+          if (mode === 'browser' && prepared.result === 'NOT_SUBMITTED') console.log('  FORM POPULATED, SUBMIT AVAILABLE, NOT SUBMITTED');
+          if (prepared.utrMatchId) row.utr_match_id = prepared.utrMatchId;
+          if (prepared.utrMatchUrl) row.utr_match_url = prepared.utrMatchUrl;
+          if (prepared.result === 'CREATED') { row.utr_sync_status = 'MATCH_CREATED'; row.utr_synced_at = new Date().toISOString(); }
+          if (prepared.result.startsWith('NEEDS_REVIEW')) throw new Error(prepared.result);
+        }
+        // A match previewed but not submitted in a browser dry run cannot be scored yet.
+        if (row.score && operation !== 'create' && results[0] !== 'NOT_SUBMITTED') {
+          await eventPage.open();
+          const scored = await eventPage.enterScore(row, mode === 'live');
+          results.push(scored.startsWith('NEEDS_REVIEW') ? 'NEEDS_REVIEW' : scored);
+          console.log(`${row.match_id} score ${row.score}: ${scored}`);
+          if (mode === 'live' && (scored === 'SCORE_SYNCED' || scored === 'SKIP_ALREADY_EXISTS')) { row.utr_sync_status = 'SCORE_SYNCED'; row.utr_synced_at = new Date().toISOString(); }
+          if (scored.startsWith('NEEDS_REVIEW')) throw new Error(scored);
+        }
+      } catch (error) {
+        const message = (error as Error).message.replace(/^NEEDS_REVIEW: /, '');
+        if (!results.includes('NEEDS_REVIEW')) results.push('NEEDS_REVIEW');
+        row.utr_sync_status = 'NEEDS_REVIEW';
+        console.error(`${row.match_id} NEEDS_REVIEW: ${message}`);
+        logger.log({ ...row, action: operation, result: 'NEEDS_REVIEW', error: message });
+      }
+      for (const result of results) { const key = result.split(':')[0]!; totals[key] = (totals[key] ?? 0) + 1; }
+      if (!results.includes('NEEDS_REVIEW')) logger.log({ ...row, action: operation, result: results.join('+'), utr_match_id: row.utr_match_id || undefined });
+      if (mode === 'live') writeMatches(absolute, rows);
+    }
+  });
+  console.log(`\nSUMMARY (${mode}): ${Object.entries(totals).map(([k, v]) => `${k}=${v}`).join(' ') || 'nothing to do'}`);
+  if (totals.NEEDS_REVIEW) process.exitCode = 2;
+}
+
+/** Records the UTR web app's own API calls while the account owner performs one create and one score by hand. */
+async function capture(options: ModeOptions): Promise<void> {
+  await withBrowser({ ...options, keepOpen: false }, async page => {
+    const event = await openAndVerifyEvent(page, false);
+    console.log(`UTR EVENT: ${event.name}`);
+    const stop = recordApiCalls(page);
+    console.log('CAPTURE: create one match and enter one score by hand in the browser, then press Ctrl+C here.');
+    await new Promise<void>(resolve => { process.once('SIGINT', () => resolve()); process.once('SIGTERM', () => resolve()); });
+    console.log(`CAPTURE SAVED: ${stop()} (endpoints and payload shapes only; no headers, cookies, or values)`);
+  });
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const command = args[0];
   const file = args[1] && !args[1].startsWith('--') ? args[1] : 'matches.csv';
-  if (!command || !['validate', 'plan', 'create', 'scores', 'sync'].includes(command)) {
-    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all] [--keep-open]');
+  if (!command || !['validate', 'plan', 'create', 'scores', 'sync', 'capture'].includes(command)) {
+    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync|capture> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all|--only <match_id>] [--keep-open]');
   }
   if (command === 'validate') { console.log(`VALID: ${load(file).rows.length} matches`); return; }
   if (command === 'plan') { printPlan(load(file).rows); return; }
   const options: ModeOptions = {
     dryRun: args.includes('--dry-run'), browserDryRun: args.includes('--browser-dry-run'),
-    live: args.includes('--live'), all: args.includes('--all'), keepOpen: args.includes('--keep-open')
+    live: args.includes('--live'), all: args.includes('--all'), keepOpen: args.includes('--keep-open'),
+    only: args.includes('--only') ? args[args.indexOf('--only') + 1] : undefined
   };
-  await browserRun(file, command as 'create'|'scores'|'sync', options);
+  if (command === 'capture') { await capture(options); return; }
+  if (options.only !== undefined && (!options.only || options.only.startsWith('--'))) throw new Error('--only requires a match_id');
+  if (options.only && options.all) throw new Error('Use either --only or --all, not both');
+  await browserRun(file, command as Operation, options);
 }
 
-main().catch(error => { console.error((error as Error).message); process.exitCode = 1; });
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
+  main().catch(error => { console.error((error as Error).message); process.exitCode = 1; });
+}

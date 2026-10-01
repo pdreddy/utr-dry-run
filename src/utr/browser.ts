@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { BrowserContext, Page } from 'playwright';
+import type { BrowserContext, Locator, Page } from 'playwright';
 
 export interface UtrSession { context: BrowserContext; page: Page; externallyManaged: boolean; close(): Promise<void> }
 
@@ -34,11 +34,12 @@ export async function openSession(): Promise<UtrSession> {
   const profile = path.resolve(process.env.UTR_PROFILE_DIR || '.playwright/utr-profile');
   fs.mkdirSync(profile, { recursive: true });
   const channel = process.env.UTR_BROWSER_CHANNEL || undefined;
+  const executablePath = process.env.UTR_BROWSER_EXECUTABLE || undefined;
   // Do not infer headless mode from DISPLAY: macOS and Windows normally have no
   // DISPLAY variable, and doing so prevents the user from completing login/MFA.
   const headless = shouldRunHeadless();
   const context = await chromium.launchPersistentContext(profile, {
-    headless, channel, viewport: { width: 1440, height: 1000 }
+    headless, channel, executablePath, viewport: { width: 1440, height: 1000 }
   });
   const page = context.pages()[0] ?? await context.newPage();
   return { context, page, externallyManaged: false, close: () => context.close() };
@@ -52,9 +53,10 @@ export async function screenshot(page: Page, name: string): Promise<string> {
   return file;
 }
 
-export async function firstVisible(page: Page, selectors: readonly string[]) {
+/** First visible candidate inside `scope` (a page, dialog, or match card). */
+export async function firstVisible(scope: Page | Locator, selectors: readonly string[]) {
   for (const selector of selectors) {
-    const candidate = page.locator(selector).first();
+    const candidate = scope.locator(selector).first();
     if (await candidate.isVisible().catch(() => false)) return { selector, locator: candidate };
   }
   return undefined;

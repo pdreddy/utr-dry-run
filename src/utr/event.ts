@@ -18,10 +18,20 @@ export function eventUrl(config = readUtrConfig()): string | undefined {
   const value = configured || (id ? `https://app.utrsports.net/events/${encodeURIComponent(id)}` : undefined);
   if (!value) return undefined;
   const url = new URL(value);
-  if (url.protocol !== 'https:' || url.hostname !== 'app.utrsports.net' || !/^\/events\/\d+\/?$/.test(url.pathname)) {
+  // A loopback host is permitted so the full flow can be rehearsed against the
+  // local mock (tests/mock-utr); it can never reach a real event.
+  const utr = url.protocol === 'https:' && url.hostname === 'app.utrsports.net';
+  const loopback = url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname);
+  if (!(utr || loopback) || !/^\/events\/\d+\/?$/.test(url.pathname)) {
     throw new Error('UTR event URL must be an https://app.utrsports.net/events/<numeric-id> URL');
   }
   return url.toString();
+}
+
+/** Site root used for the authentication check (UTR, or the local mock). */
+export function siteOrigin(): string {
+  const url = eventUrl();
+  return url ? `${new URL(url).origin}/` : 'https://app.utrsports.net/';
 }
 
 export async function openAndVerifyEvent(page: Page, live: boolean): Promise<{ verified: boolean; name: string }> {

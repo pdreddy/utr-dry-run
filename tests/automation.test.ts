@@ -7,6 +7,9 @@ import type { MatchRow } from '../src/models/match.ts';
 import { shouldRunHeadless, validatedCdpUrl } from '../src/utr/browser.ts';
 import { loginTimeout } from '../src/utr/login.ts';
 import { eventUrl } from '../src/utr/event.ts';
+import { lineNamesPlayer, renderedScoreMatches, roundLabels, scoreFieldValues } from '../src/utr/eventPage.ts';
+import { endpointTemplate, extractId, shapeOf } from '../src/utr/network.ts';
+import { selectRows } from '../src/cli.ts';
 
 const csv = `match_id,round,player_a,player_b,depends_on_a,depends_on_b,winner,score,status
 R1,R16,Alice Smith,Bob Jones,,,,,READY_TO_CREATE
@@ -70,5 +73,36 @@ describe('CSV and bracket automation', () => {
       if (oldUrl === undefined) delete process.env.UTR_EVENT_URL; else process.env.UTR_EVENT_URL = oldUrl;
       if (oldId === undefined) delete process.env.UTR_EVENT_ID; else process.env.UTR_EVENT_ID = oldId;
     }
+  });
+  it('matches a player line exactly, tolerating ratings and seeds but not longer names', () => {
+    assert.equal(lineNamesPlayer('Pranav V', 'Pranav V'), true);
+    assert.equal(lineNamesPlayer('[1] Pranav V (8.12)', 'pranav v'), true);
+    assert.equal(lineNamesPlayer('Pranav Vijay', 'Pranav V'), false);
+  });
+  it('recognizes a rendered score in interleaved and per-player layouts', () => {
+    const sets = parseScore('6-4,3-6,10-7');
+    assert.equal(renderedScoreMatches('Pranav V\n6\n3\n10\nRidit Sarkar\n4\n6\n7', sets), true);
+    assert.equal(renderedScoreMatches('6-4 3-6 10-7', sets), true);
+    assert.equal(renderedScoreMatches('Ridit Sarkar\n4\n6\n7\nPranav V\n6\n3\n10', sets, false), true);
+    assert.equal(renderedScoreMatches('Pranav V 8.12\n6\n4', parseScore('6-3')), false);
+  });
+  it('maps CSV rounds to UTR round labels', () => assert.ok(roundLabels('QF').includes('Quarterfinals')));
+  it('maps sets to labelled score inputs, swapping when player B is listed first', () => {
+    const labels = ['Set 1 Player 1', 'Set 1 Player 2', 'Set 2 Player 1', 'Set 2 Player 2', 'Set 3 Player 1', 'Set 3 Player 2'];
+    assert.deepEqual(scoreFieldValues(labels, parseScore('6-4,6-3'), true), [6, 4, 6, 3, undefined, undefined]);
+    assert.deepEqual(scoreFieldValues(labels, parseScore('6-4,6-3'), false), [4, 6, 3, 6, undefined, undefined]);
+    assert.deepEqual(scoreFieldValues(['', '', '', ''], parseScore('6-4,6-3'), true, 'rows'), [6, 6, 4, 3]);
+  });
+  it('extracts match IDs and records only payload shapes', () => {
+    assert.equal(extractId({ match: { id: 42 } }), '42');
+    assert.deepEqual(shapeOf({ playerAId: '7', sets: [{ a: 6 }] }), { playerAId: 'string', sets: [{ a: 'number' }] });
+    assert.equal(endpointTemplate('https://api.utrsports.net/v1/match/123/score?x=1'), 'https://api.utrsports.net/v1/match/{id}/score');
+  });
+  it('limits a live run to one match unless --all or --only is given', () => {
+    const rows = resolveBracket(parseMatches(csv));
+    assert.deepEqual(selectRows(rows, 'create', 'live', {}).map(r => r.match_id), ['R1']);
+    assert.deepEqual(selectRows(rows, 'create', 'live', { only: 'R2' }).map(r => r.match_id), ['R2']);
+    assert.equal(selectRows(rows, 'create', 'live', { all: true }).length, 2);
+    assert.throws(() => selectRows(rows, 'create', 'live', { only: 'QF1' }), /not an eligible/);
   });
 });

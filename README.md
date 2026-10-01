@@ -51,6 +51,21 @@ npm run utr -- sync matches.csv --dry-run
 
 `scores --live` processes only score-bearing rows and verifies the rendered result. Each successful live operation is immediately written back using an atomic CSV replacement. User fields and unknown extra CSV columns are retained.
 
+## Recommended workflow (one event, end to end)
+
+1. `validate` then `plan` (no browser) to check the bracket and see every proposed action.
+2. `create --browser-dry-run` to confirm login, event name, player matching and the form, with nothing submitted.
+3. `create --live` creates **one** match (the first pending one, or `--only <match_id>`). Confirm it in UTR.
+4. `create --live --all` creates the rest of the round. Re-running is safe: existing matches are detected by stored ID, then by the exact players on a single match card.
+5. After play, put `winner` and `score` in `matches.csv` and run `sync --live --all`. This enters scores, then unlocks and creates the next round in one pass. `scores --live` only enters scores.
+6. Any row the tool cannot verify (ambiguous/missing player, round not offered, duplicate match in UTR, score not shown after saving) is marked `NEEDS_REVIEW` and the command exits with code 2.
+
+Writes are confirmed by UTR's own API response (HTTP status) and then by re-reading the match card, not by page-load heuristics. Use `--only <match_id>` to re-run a single match.
+
+### Learning UTR's real controls
+
+`npm run utr -- capture` opens the event; create one match and enter one score by hand, then press Ctrl+C. `logs/utr-api-capture.json` records only HTTP method, endpoint template, status and payload *shape* (no headers, cookies, tokens or values). Use it to confirm selectors in `src/utr/selectors.ts`, and as the basis for a direct API client if UTR's terms allow it; the UI path is the supported default. If your event's score dialog lists inputs player by player instead of per set, set `UTR_SCORE_INPUT_ORDER=rows` (labelled "Set N / Player N" inputs are mapped automatically).
+
 ## CSV and bracket
 
 The full schema is:
@@ -72,9 +87,13 @@ Screenshots are written to `screenshots/`. Human-readable and structured daily l
 ## Development
 
 ```bash
-npm test
+npm test            # unit tests, no browser
+npm run test:e2e    # full 15-match event against a local UTR mock, headless Chromium
+npm run mock:utr    # run the mock on :4510 to watch the flow manually
 npm run build
 ```
+
+`tests/mock-utr/` is a stand-in for a director's event page (match cards, typeahead player dialog, per-match score dialog, duplicate-rejecting API). The e2e suite runs the real CLI against it: dry runs, the one-match live gate, `--all`, idempotent re-runs, scoring (including a match tiebreak), unlocking QF/SF/Final, ambiguous-name review, and the event-name guard. Set `UTR_BROWSER_EXECUTABLE` to use a specific Chromium. The mock proves the automation logic; it cannot prove UTR's real selectors, which is what the browser dry run and `capture` are for.
 
 Unit/integration coverage uses Node's built-in test runner and includes CSV parsing, duplicate IDs/players, dependencies, multi-round propagation, score formats and winner consistency, missing players, normalized-name idempotency, and later-round unlocking.
 

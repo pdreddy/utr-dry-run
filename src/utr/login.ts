@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import { firstVisible, screenshot } from './browser.ts';
 import { SELECTORS } from './selectors.ts';
+import { siteOrigin } from './event.ts';
 
 export function loginTimeout(value = process.env.UTR_LOGIN_TIMEOUT_MS): number {
   const parsed = Number(value || 600_000);
@@ -29,7 +30,7 @@ async function authenticatedPage(pages: Page[]): Promise<Page | undefined> {
 }
 
 export async function ensureAuthenticated(page: Page): Promise<Page | undefined> {
-  await page.goto('https://app.utrsports.net/', { waitUntil: 'domcontentloaded', timeout: 45_000 });
+  await page.goto(siteOrigin(), { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
   const existing = await authenticatedPage(page.context().pages());
   if (existing) return existing;
