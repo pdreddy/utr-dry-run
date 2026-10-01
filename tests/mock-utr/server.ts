@@ -26,9 +26,9 @@ export interface MockState {
 export const EVENT_ID = 388079;
 export const EVENT_NAME = 'UTR Dry Run Junior Open';
 const PLAYERS = [
-  'Pranav V', 'Pranav Vijay', 'Ridit Sarkar', 'Iraj Kotru', 'Rithva Kanakaraj', 'Pritish Singhal', 'Aarohi Mara',
+  'Pranav Vommi', 'Pranav Vijay', 'Ridit Sarkar', 'Iraj Kotru', 'Rithva Kanakaraj', 'Pritish Singhal', 'Aarohi Mara',
   'Venkata Aarush Tellabati', 'Vansh Sambara', 'Prajwal Aripaka', 'Venkata Ram Dheeraj Nagulakonda',
-  'Ranveer Kalavakolanu', 'Saatvik Mishra', 'Harsha Vennapusa', 'Dhruvin Saladi', 'Sai Mukunth Kuppan',
+  'Ranveer Kalavakolanu', 'Saatvik Mishra', 'Harsha Vennapusa', 'Dhruvin Saladi', 'Sai Mukunth Kuppan Saravanan',
   'Viswesh Vasu', 'Aarav Shah', 'Aarav Shah'
 ];
 const ROUNDS = ['Round of 16', 'Quarterfinals', 'Semifinals', 'Final'];
@@ -129,8 +129,9 @@ function editorPage(state: MockState): string {
 <div id="groupView"><div>Round Robin, Co-ed, Two Sets w/ Match Tiebreaker, 8 Players</div><h2>Round 1</h2>
   <div class="card"><span class="mn">Match #1</span><div class="slot">Pritish Singhal</div><div class="slot">Bye</div><button type="button">Score</button></div></div>
 <div id="playoffView" style="display:none"><div>Single Elimination, Co-ed, Two Sets w/ Match Tiebreaker, 16 Players</div><span id="saved">Saved</span> <button type="button" id="publish">PUBLISH</button>
-<input placeholder="Filter Players" id="pfilter">
-<div id="rosterPanel">${rosterHtml(state)}</div>
+<button type="button" id="rosterToggle" aria-expanded="false">PLAYERS NOT IN DRAW</button>
+<div id="rosterSection" hidden><input placeholder="Filter Players" id="pfilter">
+<div id="rosterPanel">${rosterHtml(state)}</div></div>
 <div class="cols">${editorHtml(state)}</div></div>
 <script>
 // Like the real editor, a fresh load always shows the default draw (Group 01) until Playoff is chosen.
@@ -138,6 +139,7 @@ document.getElementById('rail').onclick = () => { const l = document.getElementB
 document.getElementById('po').onclick = () => { document.getElementById('groupView').style.display = 'none'; document.getElementById('playoffView').style.display = 'block'; };
 const call = (method, url, body) => fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(async r => { if (!r.ok) throw new Error(await r.text()); return r.json(); });
 document.getElementById('publish').onclick = () => call('POST', '/api/v1/draw/publish', {}).then(refresh);
+document.getElementById('rosterToggle').onclick = () => { const section = document.getElementById('rosterSection'); section.hidden = false; document.getElementById('rosterToggle').setAttribute('aria-expanded', 'true'); };
 // Like the real editor's autosave, a slot pick or score save updates the bracket in place, with no page reload.
 async function refresh() { document.querySelector('.cols').innerHTML = (await fetch('/api/v1/draw/fragment').then(r => r.json())).html; bind(); }
 async function refreshRoster() { document.getElementById('rosterPanel').innerHTML = (await fetch('/api/v1/draw/roster/html?query=' + encodeURIComponent(document.getElementById('pfilter').value)).then(r => r.json())).html; bindRoster(); }

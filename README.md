@@ -16,6 +16,8 @@ Leave `UTR_HEADLESS=false` for the first run. Headed mode is not inferred from `
 
 The tool never accepts, retrieves, or stores a UTR password. If the Playwright profile cannot complete login, it can instead attach to a Chrome instance that **you** opened and authenticated. Close all Chrome windows, start Chrome with a dedicated temporary profile and localhost-only debugging, log into UTR normally, then set `UTR_CDP_URL=http://127.0.0.1:9222`:
 
+Run `./run.sh login` for the initial sign-in. It opens only UTR's authentication flow and waits while you enter the credentials directly into UTR's browser form; after UTR confirms the session, the command closes the browser and retains the authenticated profile. It does not start roster or match automation. Then run `./run.sh dry-run`.
+
 ```bash
 # macOS
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --user-data-dir="$HOME/.utr-chrome"

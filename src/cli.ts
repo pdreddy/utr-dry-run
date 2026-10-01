@@ -116,7 +116,10 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
       if (operation !== 'scores') {
         // The match-card picker only finds players already on this draw's roster, so add
         // every Round of 16 name first (later rounds fill from results, not from the roster).
-        const names = [...new Set(selected.filter(row => row.round === 'R16').flatMap(row => [row.player_a, row.player_b]))];
+        // Roster preparation is deliberately not limited by the one-match live safety
+        // gate. UTR's slot picker only searches the draw roster, so finish adding all
+        // 16 first-round players before opening the first match-card dropdown.
+        const names = [...new Set(rows.filter(row => row.round === 'R16').flatMap(row => [row.player_a, row.player_b]))];
         if (names.length) {
           const roster = await eventPage.addPlayersToDraw(names, mode === 'live');
           for (const [name, status] of Object.entries(roster)) console.log(`ROSTER ${name}: ${status}`);
@@ -168,6 +171,13 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
   if (totals.NEEDS_REVIEW) process.exitCode = 2;
 }
 
+/** Opens only the authentication flow and persists UTR's session in the browser profile. */
+async function login(): Promise<void> {
+  await withBrowser({}, async () => {
+    console.log('LOGIN SAVED: UTR authenticated this browser profile. You can now run ./run.sh dry-run.');
+  });
+}
+
 /** Records the UTR web app's own API calls while the account owner performs one create and one score by hand. */
 async function capture(options: ModeOptions): Promise<void> {
   await withBrowser({ ...options, keepOpen: false }, async page => {
@@ -217,9 +227,10 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const command = args[0];
   const file = args[1] && !args[1].startsWith('--') ? args[1] : 'matches.csv';
-  if (!command || !['validate', 'plan', 'create', 'scores', 'sync', 'capture', 'inspect'].includes(command)) {
-    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync|capture|inspect> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all|--only <match_id>] [--keep-open]');
+  if (!command || !['login', 'validate', 'plan', 'create', 'scores', 'sync', 'capture', 'inspect'].includes(command)) {
+    throw new Error('Usage: npm run utr -- <login|validate|plan|create|scores|sync|capture|inspect> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all|--only <match_id>] [--keep-open]');
   }
+  if (command === 'login') { await login(); return; }
   if (command === 'validate') { console.log(`VALID: ${load(file).rows.length} matches`); return; }
   if (command === 'plan') { printPlan(load(file).rows); return; }
   const options: ModeOptions = {

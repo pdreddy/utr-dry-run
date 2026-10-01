@@ -10,8 +10,14 @@ export const SELECTORS = {
   authenticated: [
     '[data-testid="user-menu"]', '[aria-label*="profile" i]',
     '[data-testid*="avatar" i]', 'a[href*="logout" i]',
-    'button:has-text("Log out")', 'button:has-text("Sign out")',
-    'a[href*="/profile/"]', 'a[href*="/home"]'
+    'button:has-text("Log out")', 'button:has-text("Sign out")'
+  ],
+  /** Controls that open the login form; unlike `login`, this excludes form fields. */
+  loginAction: [
+    'button:has-text("Log in")', 'button:has-text("Sign in")',
+    'a:has-text("Log in")', 'a:has-text("Sign in")',
+    'button:has-text("Login")', 'a:has-text("Login")',
+    'button:has-text("Join / Sign In")', 'a:has-text("Join / Sign In")'
   ],
   login: [
     'input[type="password"]', 'input[type="email"]',

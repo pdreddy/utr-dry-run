@@ -135,6 +135,25 @@ export class UtrDrawEditor {
     return leaf.length > 1 ? { status: 'ambiguous' } : { status: 'exact', row: leaf[0]!.row };
   }
 
+  /** Opens UTR's collapsed "Players not in draw" accordion before roster searches. */
+  private async expandRoster(): Promise<boolean> {
+    const filter = this.page.getByPlaceholder(/filter players/i).first();
+    if (await filter.isVisible().catch(() => false)) return true;
+
+    const labels = this.page.getByText(/players not in draw/i);
+    for (let i = 0; i < await labels.count(); i++) {
+      const label = labels.nth(i);
+      if (!await label.isVisible().catch(() => false)) continue;
+      const button = label.locator('xpath=ancestor-or-self::*[self::button or @role="button"][1]');
+      const target = await button.count().catch(() => 0) ? button : label;
+      console.log('ROSTER: expanding "Players not in draw"');
+      await this.safeClick(target);
+      await filter.waitFor({ state: 'visible', timeout: 5_000 }).catch(() => undefined);
+      if (await filter.isVisible().catch(() => false)) return true;
+    }
+    return false;
+  }
+
   /**
    * UTR's match-card "Select a player" picker only searches players already on this
    * draw's roster (the left sidebar's "Players not in draw" list; it shows "No players
@@ -144,6 +163,11 @@ export class UtrDrawEditor {
    */
   async addPlayersToDraw(names: string[], live: boolean): Promise<Record<string, string>> {
     const results: Record<string, string> = {};
+    if (!await this.expandRoster()) {
+      for (const name of [...new Set(names)]) results[name] = 'NEEDS_REVIEW: could not expand "Players not in draw"';
+      await screenshot(this.page, 'draw-roster-not-expanded');
+      return results;
+    }
     for (const name of [...new Set(names)]) {
       const found = await this.searchRoster(name);
       if (found.status === 'missing') { results[name] = 'NEEDS_REVIEW: not found in "Players not in draw"'; continue; }

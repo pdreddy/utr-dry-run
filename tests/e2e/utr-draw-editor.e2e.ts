@@ -63,7 +63,12 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 600
   it('live without --all fills exactly Match #1 (safety gate)', async () => {
     const { code, out } = await cli(['create', csv, '--live']);
     assert.equal(code, 0, out);
-    assert.deepEqual([r16()[0]!.a, r16()[0]!.b], ['Pranav V', 'Ridit Sarkar']);
+    assert.match(out, /ROSTER: expanding "Players not in draw"/);
+    assert.equal(mock.state.editor.roster.length, 16, 'all players must be rostered before the one-match safety gate');
+    const firstSlotWrite = mock.state.writes.findIndex(write => /\/slot$/.test(write.path));
+    assert.equal(mock.state.writes.slice(0, firstSlotWrite).filter(write => write.path === '/api/v1/draw/roster').length, 16,
+      'all 16 Add to Draw writes must finish before a match dropdown selection');
+    assert.deepEqual([r16()[0]!.a, r16()[0]!.b], ['Pranav Vommi', 'Ridit Sarkar']);
     assert.ok(r16().slice(1).every(m => !m.a && !m.b));
     assert.equal(readMatches(csv)[0]!.utr_sync_status, 'MATCH_CREATED');
   });
@@ -123,7 +128,7 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 600
   it('refuses to type into a slot that already holds different players', async () => {
     mock.state.editor.r16[0] = { a: 'Aarav Shah', b: 'Viswesh Vasu' };
     const review = path.join(work, 'occupied.csv');
-    fs.writeFileSync(review, 'match_id,round,player_a,player_b\nR16-1,R16,Pranav V,Ridit Sarkar\n');
+    fs.writeFileSync(review, 'match_id,round,player_a,player_b\nR16-1,R16,Pranav Vommi,Ridit Sarkar\n');
     const before = writes();
     const { code, out } = await cli(['create', review, '--live', '--all']);
     assert.equal(code, 2, out);
