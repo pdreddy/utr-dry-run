@@ -3,6 +3,12 @@ import { firstVisible, screenshot } from './browser.ts';
 import { SELECTORS } from './selectors.ts';
 import { siteOrigin } from './event.ts';
 
+const CREDENTIAL_FIELDS = [
+  'input[type="email"]', 'input[type="password"]',
+  'input[autocomplete="username"]', 'input[autocomplete="current-password"]',
+  'input[name*="email" i]', 'input[name*="password" i]'
+] as const;
+
 export function loginTimeout(value = process.env.UTR_LOGIN_TIMEOUT_MS): number {
   const parsed = Number(value || 600_000);
   return Number.isFinite(parsed) && parsed >= 10_000 ? parsed : 600_000;
@@ -46,16 +52,17 @@ export async function ensureAuthenticated(page: Page): Promise<Page | undefined>
     console.error('Authentication was not detected in headless mode. Run once with UTR_HEADLESS=false to complete login/MFA.');
     return undefined;
   }
-  const loginControl = await firstVisible(page, SELECTORS.loginAction);
-  if (loginControl) {
-    console.log(`Opening UTR login using discovered control: ${loginControl.selector}`);
-    await loginControl.locator.click().catch(error => {
-      console.log(`Could not click the login control automatically (${(error as Error).message.split('\n')[0]}). Click it in the open browser.`);
-    });
+  // Never click a Sign in / Log in button. UTR uses the same text for both the
+  // control that opens its form and the form submit button; distinguishing them
+  // unreliably can submit empty fields before the user has a chance to type.
+  const credentialForm = await firstVisible(page, CREDENTIAL_FIELDS);
+  if (credentialForm) {
+    console.log('UTR login form is ready in the browser. Enter your credentials there; the tool will not submit the form for you.');
+    await credentialForm.locator.focus().catch(() => undefined);
   } else {
-    const formVisible = Boolean(await firstVisible(page, ['input[type="email"]', 'input[type="password"]']));
-    console.log(formVisible
-      ? 'UTR login form is ready in the browser. Enter your credentials there; the tool does not read or store them.'
+    const loginControl = await firstVisible(page, SELECTORS.loginAction);
+    console.log(loginControl
+      ? `UTR sign-in control is ready (${loginControl.selector}). Click it yourself, then enter and submit your credentials.`
       : 'No login button was detected. Use the open browser to navigate to Log in / Sign in.');
   }
   const timeout = loginTimeout();
