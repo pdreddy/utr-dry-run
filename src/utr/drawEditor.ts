@@ -14,6 +14,17 @@ export function matchNumber(matchId: string): number | undefined {
   return n ? Number(n) : undefined;
 }
 
+type Box = { x: number; y: number; width: number; height: number };
+
+/**
+ * Whether an element sits inside "Players not in draw": below its header (sections above
+ * it are PLACED / NOT PLACED / WAITLIST) and starting within the header's own width (the
+ * bracket's match cards start to the right of the sidebar).
+ */
+export function inRosterSection(box: Box | null, header: Box): boolean {
+  return !!box && box.y >= header.y + header.height - 2 && box.x >= header.x - 80 && box.x <= header.x + Math.max(header.width, 150) + 20;
+}
+
 /**
  * Page object for UTR's Event Desk draw editor (`/events/<id>/draws?v=drawEditor&d=<draw>`).
  *
@@ -93,24 +104,50 @@ export class UtrDrawEditor {
     console.log(`DRAW SELECT: clicked "${name}" but the Round of 16 bracket did not appear`);
   }
 
+  /** Set once a player row has been seen under "Players not in draw", proving the section is open. */
+  private rosterOpenConfirmed = false;
+
+  /** The sidebar's "PLAYERS NOT IN DRAW (n)" section header (a collapsible bar). */
+  private rosterHeader(): Locator {
+    return this.page.getByText(/^players not in draw/i).first();
+  }
+
+  /** Opens "Players not in draw" when it reports itself collapsed; a no-op when it does not say. */
+  private async openRosterSection(): Promise<void> {
+    const header = this.rosterHeader();
+    if (!await header.isVisible().catch(() => false)) return;
+    const state = header.locator('xpath=ancestor-or-self::*[@aria-expanded][1]');
+    if (await state.count().catch(() => 0) && await state.getAttribute('aria-expanded').catch(() => null) === 'false') {
+      console.log('ROSTER: expanding "Players not in draw"');
+      await this.safeClick(header);
+      await this.page.waitForTimeout(800);
+    }
+  }
+
   /**
-   * Finds `name`'s row under the sidebar's "Players not in draw" list, typing into its
-   * "Filter Players" search box first. Returns 'missing' for a player already added to
-   * the roster too (their row leaves this list), so callers that care about that should
-   * check the roster-gated match-card picker as well; see `createMatch`'s dry-run branch.
+   * Finds `name`'s row inside the sidebar's "Players not in draw" section, typing into
+   * "Filter Players" first. Only rows below that section's header and in the sidebar's
+   * column count, so a name in a match card or in the PLACED section is never taken for
+   * it. The section starts collapsed; when it does not expose aria-expanded, the first
+   * search that finds nothing clicks its header once to open it, and clicks again to
+   * restore it if that did not help. Returns 'missing' for a player already in the draw
+   * (their row has left this section) as well as for an unknown name.
    */
-  private async searchRoster(name: string): Promise<{ status: 'exact'|'ambiguous'|'missing'; row?: Locator }> {
+  private async searchRoster(name: string, patience = 3_000): Promise<{ status: 'exact'|'ambiguous'|'missing'; row?: Locator }> {
     const filter = this.page.getByPlaceholder(/filter players/i).first();
     if (await filter.count().catch(() => 0)) {
       await filter.fill('').catch(() => undefined);
       await filter.fill(name.split(' ')[0] ?? name).catch(() => undefined);
     }
     const collect = async () => {
+      const header = this.rosterHeader();
+      const headerBox = await header.isVisible().catch(() => false) ? await header.boundingBox().catch(() => null) : null;
       const candidates = this.page.getByText(name, { exact: false });
       const matches: { row: Locator; text: string }[] = [];
       for (let i = 0; i < Math.min(await candidates.count(), 25); i++) {
         const row = candidates.nth(i);
         if (!await row.isVisible().catch(() => false)) continue; // skips the other, currently hidden, draws on this page
+        if (headerBox && !inRosterSection(await row.boundingBox().catch(() => null), headerBox)) continue;
         const text = ((await row.innerText().catch(() => '')) || '').trim();
         const firstLine = text.split('\n')[0] ?? text;
         // A roster row is short (name + rating + city, a few lines); a wrapping container
@@ -121,18 +158,81 @@ export class UtrDrawEditor {
     };
     // The real site's filter list re-renders after a network round trip, unlike the local
     // mock; poll instead of a single fixed wait so this does not race ahead of it.
-    let found = await collect();
-    const deadline = Date.now() + 5_000;
-    while (!found.length && Date.now() < deadline) {
-      await this.page.waitForTimeout(300);
-      found = await collect();
+    const poll = async (ms: number) => {
+      let found = await collect();
+      const deadline = Date.now() + ms;
+      while (!found.length && Date.now() < deadline) {
+        await this.page.waitForTimeout(300);
+        found = await collect();
+      }
+      return found;
+    };
+    let found = await poll(this.rosterOpenConfirmed ? patience : Math.min(patience, 2_500));
+    if (!found.length && !this.rosterOpenConfirmed && await this.rosterHeader().isVisible().catch(() => false)) {
+      if (await this.sectionShowsRows()) this.rosterOpenConfirmed = true; // open; this player just is not listed
+      else {
+        console.log('ROSTER: expanding "Players not in draw"');
+        await this.safeClick(this.rosterHeader());
+        await this.page.waitForTimeout(600);
+        found = await poll(5_000);
+        if (found.length || await this.sectionShowsRows()) this.rosterOpenConfirmed = true;
+        else await this.safeClick(this.rosterHeader()); // it did not open anything: put it back
+      }
     }
     if (!found.length) return { status: 'missing' };
+    this.rosterOpenConfirmed = true;
     // A row's own name element and its wrapping row both match (the wrapper's text is
     // the name plus its trailing icon/rating/city text); keep only the shortest match(es).
     const minLen = Math.min(...found.map(f => f.text.length));
     const leaf = found.filter(f => f.text.length === minLen);
     return leaf.length > 1 ? { status: 'ambiguous' } : { status: 'exact', row: leaf[0]!.row };
+  }
+
+  /**
+   * Whether any row shows inside "Players not in draw" (below its header, in the sidebar's
+   * column), with the filter briefly cleared so an already-added name does not hide them all.
+   */
+  private async sectionShowsRows(): Promise<boolean> {
+    const headerBox = await this.rosterHeader().boundingBox().catch(() => null);
+    if (!headerBox) return false;
+    const filter = this.page.getByPlaceholder(/filter players/i).first();
+    const previous = await filter.inputValue().catch(() => '');
+    if (previous) { await filter.fill('').catch(() => undefined); await this.page.waitForTimeout(800); }
+    const rows = this.page.locator('li:visible, [role="row"]:visible, [role="listitem"]:visible, input[type="checkbox"]:visible, [role="checkbox"]:visible');
+    let shown = false;
+    for (let i = 0; i < Math.min(await rows.count().catch(() => 0), 80) && !shown; i++) {
+      shown = inRosterSection(await rows.nth(i).boundingBox().catch(() => null), headerBox);
+    }
+    if (previous) { await filter.fill(previous).catch(() => undefined); await this.page.waitForTimeout(300); }
+    return shown;
+  }
+
+  /**
+   * The row's own menu trigger: the rightmost control in the smallest ancestor of the
+   * name that holds one, stopping before that ancestor grows past a single row. The
+   * leading checkbox is never picked (it is an input, and leftmost besides).
+   */
+  private async rowMenuTrigger(nameEl: Locator): Promise<Locator | undefined> {
+    for (let depth = 1; depth <= 6; depth++) {
+      const container = nameEl.locator(`xpath=ancestor::*[${depth}]`);
+      const text = ((await container.innerText().catch(() => '')) || '').trim();
+      if (text.length > 200) break; // grew past one row into the list
+      const controls = [
+        container.locator('button:visible, [role="button"]:visible, [aria-haspopup]:visible, [class*="more" i]:visible, [class*="menu" i]:visible, [class*="action" i]:visible'),
+        container.getByText(/^(\.\.\.|…|⋯|\+)$/)
+      ];
+      let best: Locator | undefined, bestX = -Infinity;
+      for (const group of controls) {
+        for (let i = 0; i < Math.min(await group.count().catch(() => 0), 10); i++) {
+          const control = group.nth(i);
+          if (!await control.isVisible().catch(() => false)) continue;
+          const box = await control.boundingBox().catch(() => null);
+          if (box && box.x > bestX) { best = control; bestX = box.x; }
+        }
+      }
+      if (best) return best;
+    }
+    return undefined;
   }
 
   /**
@@ -144,15 +244,14 @@ export class UtrDrawEditor {
    */
   async addPlayersToDraw(names: string[], live: boolean): Promise<Record<string, string>> {
     const results: Record<string, string> = {};
+    await this.openRosterSection();
     for (const name of [...new Set(names)]) {
       const found = await this.searchRoster(name);
-      if (found.status === 'missing') { results[name] = 'NEEDS_REVIEW: not found in "Players not in draw"'; continue; }
+      if (found.status === 'missing') { results[name] = 'not listed under "Players not in draw" (already in the draw, or the name differs from UTR)'; continue; }
       if (found.status === 'ambiguous') { results[name] = 'NEEDS_REVIEW: ambiguous in "Players not in draw"'; continue; }
       if (!live) { results[name] = 'found'; continue; }
-      const row = found.row!;
-      // The row's own trailing control (an icon button after the name, never the row's checkbox) opens its menu.
-      const trigger = row.locator('xpath=ancestor::*[self::li or self::div][1]').locator('button, [role="button"]').last();
-      if (!await trigger.count().catch(() => 0)) { results[name] = 'NEEDS_REVIEW: no row menu found'; continue; }
+      const trigger = await this.rowMenuTrigger(found.row!);
+      if (!trigger) { results[name] = 'NEEDS_REVIEW: no "..." menu found on this player\'s row'; continue; }
       await this.safeClick(trigger);
       const addItem = this.page.getByText('Add to Draw', { exact: true }).first();
       await addItem.waitFor({ state: 'visible', timeout: 3_000 }).catch(() => undefined);
@@ -167,12 +266,13 @@ export class UtrDrawEditor {
       const deadline = Date.now() + 5_000;
       let stillListed: 'exact'|'ambiguous'|'missing' = 'exact';
       while (Date.now() < deadline) {
-        stillListed = (await this.searchRoster(name)).status;
+        stillListed = (await this.searchRoster(name, 0)).status;
         if (stillListed === 'missing') break;
         await this.page.waitForTimeout(300);
       }
       results[name] = stillListed === 'missing' ? 'added' : 'NEEDS_REVIEW: still listed in "Players not in draw" after Add to Draw';
     }
+    await this.page.getByPlaceholder(/filter players/i).first().fill('').catch(() => undefined);
     await screenshot(this.page, 'draw-roster-after-add');
     return results;
   }
@@ -233,7 +333,7 @@ export class UtrDrawEditor {
   /** The visible input nearest the card: the type-to-filter box the picker opens, not the page's own player-list filter. */
   private async nearestInput(card: Locator): Promise<Locator | undefined> {
     const cardBox = await card.boundingBox();
-    const inputs = this.page.locator('input:visible');
+    const inputs = this.page.locator('input:visible:not([type="checkbox"]):not([type="radio"]):not([type="hidden"])');
     const total = Math.min(await inputs.count(), 30);
     let best: { el: Locator; d: number } | undefined;
     for (let i = 0; i < total; i++) {
@@ -268,24 +368,34 @@ export class UtrDrawEditor {
     if (!input) return { texts: [], items: [] };
     await input.fill('').catch(() => undefined);
     await input.pressSequentially(query, { delay: 40 }).catch(() => input.fill(query));
+    // Only rows that open next to the typed-in box are the picker's results: the sidebar's
+    // own player rows (PLACED, Players not in draw) are list items too, and would otherwise
+    // be counted alongside the picker's row for the same player.
+    const inputBox = await input.boundingBox().catch(() => null);
+    const near = async (locator: Locator) => {
+      const kept: { item: Locator; text: string }[] = [];
+      for (let i = 0; i < Math.min(await locator.count().catch(() => 0), 80); i++) {
+        const item = locator.nth(i);
+        const box = await item.boundingBox().catch(() => null);
+        if (inputBox && (!box || box.x < inputBox.x - 50 || box.x > inputBox.x + 450 || box.y < inputBox.y - 400 || box.y > inputBox.y + 700)) continue;
+        const text = ((await item.innerText().catch(() => '')) || '').trim();
+        if (!text || /^(clear|bye)$/i.test(text)) continue; // the picker's own quick actions, never a player
+        kept.push({ item, text });
+      }
+      return kept;
+    };
     // Prefer specific row roles; only fall back to generic class matching if none are found,
     // since a class-based selector can also match the results panel that wraps the rows,
     // double-counting every row once as itself and once as part of that wrapper's text.
     const specific = this.page.locator('li:visible, [role="option"]:visible, [role="menuitem"]:visible');
     // The real site's results re-render after a network round trip, unlike the local mock;
     // poll instead of a single fixed wait so this does not race ahead of it.
+    let rows = await near(specific);
     const deadline = Date.now() + 5_000;
-    while (await specific.count() === 0 && Date.now() < deadline) await this.page.waitForTimeout(300);
-    await this.page.waitForTimeout(300); // let a just-appeared list finish rendering all its rows
-    const rows = await specific.count() ? specific : this.page.locator('[class*="option" i]:visible, [class*="result" i]:visible');
-    const total = Math.min(await rows.count(), 50);
-    const items: Locator[] = [], texts: string[] = [];
-    for (let i = 0; i < total; i++) {
-      const item = rows.nth(i);
-      const text = ((await item.innerText().catch(() => '')) || '').trim();
-      if (!text || /^(clear|bye)$/i.test(text)) continue; // the picker's own quick actions, never a player
-      items.push(item); texts.push(text);
-    }
+    while (!rows.length && Date.now() < deadline) { await this.page.waitForTimeout(300); rows = await near(specific); }
+    if (rows.length) { await this.page.waitForTimeout(300); rows = await near(specific); } // let a just-appeared list finish rendering
+    else rows = await near(this.page.locator('[class*="option" i]:visible, [class*="result" i]:visible'));
+    const items = rows.map(r => r.item), texts = rows.map(r => r.text);
     return { texts, items };
   }
 

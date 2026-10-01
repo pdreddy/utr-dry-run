@@ -10,6 +10,7 @@ import { drawEditorUrl, eventUrl } from '../src/utr/event.ts';
 import { lineNamesPlayer, renderedScoreMatches, roundLabels, scoreFieldValues } from '../src/utr/eventPage.ts';
 import { endpointTemplate, extractId, shapeOf } from '../src/utr/network.ts';
 import { selectRows } from '../src/cli.ts';
+import { inRosterSection } from '../src/utr/drawEditor.ts';
 
 const csv = `match_id,round,player_a,player_b,depends_on_a,depends_on_b,winner,score,status
 R1,R16,Alice Smith,Bob Jones,,,,,READY_TO_CREATE
@@ -113,5 +114,18 @@ describe('CSV and bracket automation', () => {
       process.env.UTR_EVENT_URL = 'https://app.utrsports.net/events/388079/draws?v=drawEditor&d=x';
       assert.equal(eventUrl(), 'https://app.utrsports.net/events/388079/draws?v=drawEditor&d=x');
     } finally { if (old === undefined) delete process.env.UTR_EVENT_URL; else process.env.UTR_EVENT_URL = old; }
+  });
+
+  it('only counts sidebar rows inside "Players not in draw", never a match card or an earlier section', () => {
+    // Real editor, from a screenshot: header text at x=368, rows' names at x=400, match cards at x≈750.
+    const header = { x: 368, y: 435, width: 175, height: 16 };
+    assert.equal(inRosterSection({ x: 400, y: 485, width: 120, height: 16 }, header), true, 'a player row');
+    assert.equal(inRosterSection({ x: 400, y: 300, width: 120, height: 16 }, header), false, 'a PLACED row above the header');
+    assert.equal(inRosterSection({ x: 752, y: 900, width: 150, height: 16 }, header), false, 'a name in a match card');
+    assert.equal(inRosterSection(null, header), false);
+    // Narrow sidebar (the local mock): a full-width header bar, cards starting just past it.
+    const bar = { x: 8, y: 200, width: 320, height: 30 };
+    assert.equal(inRosterSection({ x: 40, y: 260, width: 100, height: 16 }, bar), true);
+    assert.equal(inRosterSection({ x: 370, y: 400, width: 100, height: 16 }, bar), false);
   });
 });

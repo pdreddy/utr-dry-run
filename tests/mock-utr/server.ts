@@ -113,15 +113,21 @@ function rosterHtml(state: MockState, query = ''): string {
   // roster must show (and let the automation tell apart) each one separately.
   const notInDraw = state.players.map((name, index) => ({ name, index })).filter(p => !state.editor.roster.includes(p.index));
   const shown = q ? notInDraw.filter(p => p.name.toLowerCase().includes(q)) : notInDraw;
-  const row = (p: { name: string; index: number }) => `<li><span class="rn">${escapeHtml(p.name)}</span> <button type="button" class="more" data-index="${p.index}">...</button></li>`;
-  return `<div>PLAYERS NOT IN DRAW (${notInDraw.length})</div><ul id="roster">${shown.map(row).join('')}</ul>`;
+  const placed = state.editor.roster.map(index => state.players[index]!);
+  // Like the real sidebar: checkbox, name + rating, city, and a trailing "..." that opens the row menu.
+  const row = (p: { name: string; index: number }) => `<li class="prow"><input type="checkbox">` +
+    `<div class="pinfo"><div><b>${escapeHtml(p.name)}</b> <small>${(7 + (p.index % 5) / 2).toFixed(2)}</small></div><div>Prosper, TX</div></div>` +
+    `<span class="more" data-index="${p.index}">...</span></li>`;
+  return `<div class="sec">PLACED (${placed.length})</div><ul class="placed">${placed.map(name => `<li><b>${escapeHtml(name)}</b></li>`).join('')}</ul>` +
+    `<div class="sec" id="nidHeader">PLAYERS NOT IN DRAW (${notInDraw.length})</div><ul id="roster" style="display:none">${shown.map(row).join('')}</ul>`;
 }
 
 function editorPage(state: MockState): string {
   return `<!doctype html><html><head><title>${escapeHtml(state.eventName)} | UTR</title>
 <style>.cols{display:flex;gap:40px}.card{border:1px solid #ccc;margin:8px;padding:8px;width:340px}.slot{display:block;margin:4px 0}.set{margin-left:10px}
 .empty{color:#d0107c;cursor:pointer}ul.dd{border:1px solid #333;background:#fff;list-style:none;padding:0;margin:2px;max-height:160px;overflow:auto}ul.dd li{padding:4px;cursor:pointer}
-#roster{list-style:none;padding:0}#roster li{padding:4px}.rowmenu{border:1px solid #333;background:#fff;padding:4px;position:absolute}
+#roster,.placed{list-style:none;padding:0}#roster li{padding:4px;display:flex;gap:8px}.more{cursor:pointer;margin-left:auto}.sec{cursor:pointer;background:#ddd;padding:6px}
+.rowmenu{border:1px solid #333;background:#fff;padding:4px;position:absolute}
 [role=dialog]{position:fixed;top:60px;left:420px;background:#fff;border:2px solid #333;padding:12px}</style></head>
 <body><header><a data-testid="user-menu" href="/profile/1">My profile</a></header>
 <h1>${escapeHtml(state.eventName)}</h1>
@@ -129,9 +135,9 @@ function editorPage(state: MockState): string {
 <div id="groupView"><div>Round Robin, Co-ed, Two Sets w/ Match Tiebreaker, 8 Players</div><h2>Round 1</h2>
   <div class="card"><span class="mn">Match #1</span><div class="slot">Pritish Singhal</div><div class="slot">Bye</div><button type="button">Score</button></div></div>
 <div id="playoffView" style="display:none"><div>Single Elimination, Co-ed, Two Sets w/ Match Tiebreaker, 16 Players</div><span id="saved">Saved</span> <button type="button" id="publish">PUBLISH</button>
-<input placeholder="Filter Players" id="pfilter">
-<div id="rosterPanel">${rosterHtml(state)}</div>
-<div class="cols">${editorHtml(state)}</div></div>
+<div style="display:flex;gap:24px"><aside style="width:320px;flex:none"><input placeholder="Filter Players" id="pfilter">
+<div id="rosterPanel">${rosterHtml(state)}</div></aside>
+<div class="cols">${editorHtml(state)}</div></div></div>
 <script>
 // Like the real editor, a fresh load always shows the default draw (Group 01) until Playoff is chosen.
 document.getElementById('rail').onclick = () => { const l = document.getElementById('side'); l.style.display = l.style.display === 'none' ? 'block' : 'none'; };
@@ -142,7 +148,12 @@ document.getElementById('publish').onclick = () => call('POST', '/api/v1/draw/pu
 async function refresh() { document.querySelector('.cols').innerHTML = (await fetch('/api/v1/draw/fragment').then(r => r.json())).html; bind(); }
 async function refreshRoster() { document.getElementById('rosterPanel').innerHTML = (await fetch('/api/v1/draw/roster/html?query=' + encodeURIComponent(document.getElementById('pfilter').value)).then(r => r.json())).html; bindRoster(); }
 document.getElementById('pfilter').addEventListener('input', refreshRoster);
+// Like the real sidebar, "Players not in draw" starts collapsed (and says nothing about it
+// through aria-expanded); clicking its header toggles it, and it stays as left across refreshes.
+let notInDrawOpen = false;
 function bindRoster() {
+  document.getElementById('roster').style.display = notInDrawOpen ? 'block' : 'none';
+  document.getElementById('nidHeader').onclick = () => { notInDrawOpen = !notInDrawOpen; document.getElementById('roster').style.display = notInDrawOpen ? 'block' : 'none'; };
   document.querySelectorAll('#roster .more').forEach(button => button.onclick = () => {
     document.querySelectorAll('.rowmenu').forEach(x => x.remove());
     const menu = document.createElement('div'); menu.className = 'rowmenu';

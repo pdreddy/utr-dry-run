@@ -57,12 +57,17 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 600
     assert.equal(code, 0, out);
     assert.match(out, /DRAW EDITOR: Single Elimination/);
     assert.match(out, /SUMMARY \(browser\): NOT_SUBMITTED=8$/m);
+    assert.match(out, /ROSTER: expanding "Players not in draw"/);
+    assert.equal(out.match(/^ROSTER .+: found$/gm)?.length, 16, 'all 16 players are found in the collapsed section');
     assert.equal(writes(), 0);
+    assert.equal(mock.state.editor.roster.length, 0, 'the dry run adds nobody to the draw');
   });
 
   it('live without --all fills exactly Match #1 (safety gate)', async () => {
     const { code, out } = await cli(['create', csv, '--live']);
     assert.equal(code, 0, out);
+    assert.equal(out.match(/^ROSTER .+: added$/gm)?.length, 16, out);
+    assert.equal(mock.state.editor.roster.length, 16, 'all 16 are added to the draw first, even for one match');
     assert.deepEqual([r16()[0]!.a, r16()[0]!.b], ['Pranav V', 'Ridit Sarkar']);
     assert.ok(r16().slice(1).every(m => !m.a && !m.b));
     assert.equal(readMatches(csv)[0]!.utr_sync_status, 'MATCH_CREATED');
