@@ -5,6 +5,7 @@ import { normalizeName, namesEqual } from '../utils/names.ts';
 import { firstVisible, screenshot } from './browser.ts';
 import { clickAndAwaitMutation } from './network.ts';
 import { SELECTORS } from './selectors.ts';
+import { eventSection } from './event.ts';
 
 export interface PrepareResult { result: string; playerA?: string; playerB?: string; submitAvailable?: boolean; utrMatchId?: string; utrMatchUrl?: string }
 

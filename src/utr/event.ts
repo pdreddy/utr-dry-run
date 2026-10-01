@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Page } from 'playwright';
 import { screenshot } from './browser.ts';
 
-export interface UtrConfig { eventUrl?: string; eventId?: string; eventName?: string }
+export interface UtrConfig { eventUrl?: string; eventId?: string; eventName?: string; section?: string }
 
 export function readUtrConfig(file = process.env.UTR_CONFIG || 'utr.config.json'): UtrConfig {
   const absolute = path.resolve(file);
@@ -26,6 +26,11 @@ export function eventUrl(config = readUtrConfig()): string | undefined {
     throw new Error('UTR event URL must be an https://app.utrsports.net/events/<numeric-id> URL');
   }
   return url.toString();
+}
+
+/** Optional heading/tab (for example "Playoff") to open before creating matches. */
+export function eventSection(config = readUtrConfig()): string | undefined {
+  return (process.env.UTR_SECTION ?? config.section)?.trim() || undefined;
 }
 
 /** Site root used for the authentication check (UTR, or the local mock). */
