@@ -116,7 +116,10 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
       if (operation !== 'scores') {
         // The match-card picker only finds players already on this draw's roster, so add
         // every Round of 16 name first (later rounds fill from results, not from the roster).
-        const names = [...new Set(selected.filter(row => row.round === 'R16').flatMap(row => [row.player_a, row.player_b]))];
+        // Roster preparation is deliberately not limited by the one-match live safety
+        // gate. UTR's slot picker only searches the draw roster, so finish adding all
+        // 16 first-round players before opening the first match-card dropdown.
+        const names = [...new Set(rows.filter(row => row.round === 'R16').flatMap(row => [row.player_a, row.player_b]))];
         if (names.length) {
           const roster = await eventPage.addPlayersToDraw(names, mode === 'live');
           for (const [name, status] of Object.entries(roster)) console.log(`ROSTER ${name}: ${status}`);
