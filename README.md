@@ -12,6 +12,8 @@ cp .env.example .env
 
 The supplied draw URL is stored in `utr.config.json`. `UTR_EVENT_URL` or `UTR_EVENT_ID` can override it, and live mode additionally requires the exact `UTR_EVENT_NAME` in `.env` or `eventName` in the config. Credentials do not belong in either file: on the first headed run, log in normally in Chrome and complete any legitimate MFA/CAPTCHA. The authenticated session is retained in `.playwright/utr-profile/`. Do not commit that directory.
 
+Create the draw itself in UTR first, following UTR's [Overview: Creating Draws](https://support.universaltennis.com/en/support/solutions/articles/9000159433-overview-creating-draws), and put its `d=` URL in `utr.config.json`. This tool fills and scores an existing draw; it intentionally does **not** create, delete, or publish a draw. Keep publishing as a manual director approval after reviewing the populated bracket.
+
 Leave `UTR_HEADLESS=false` for the first run. Headed mode is not inferred from `$DISPLAY` because Windows and macOS normally do not define it. The browser remains open for up to ten minutes (configurable with `UTR_LOGIN_TIMEOUT_MS`) so the account owner can complete legitimate login/MFA. Set `UTR_HEADLESS=true` only after the persistent profile has been authenticated.
 
 The tool never accepts, retrieves, or stores a UTR password. If the Playwright profile cannot complete login, it can instead attach to a Chrome instance that **you** opened and authenticated. Close all Chrome windows, start Chrome with a dedicated temporary profile and localhost-only debugging, log into UTR normally, then set `UTR_CDP_URL=http://127.0.0.1:9222`:
@@ -83,6 +85,8 @@ Idempotency checks stored UTR URL/ID first, then the rendered event page for the
 Semantic candidates are centralized in `src/utr/selectors.ts`. The implementation prefers accessible roles/labels/text and only uses stable data attributes or descriptive inputs as fallbacks. Each browser run writes `logs/utr-selector-report.json`, listing selectors actually present on the configured page. UTR can change its private UI; review this report before enabling live mode after a UI change.
 
 Screenshots are written to `screenshots/`. Human-readable and structured daily logs are written to `logs/utr-sync-YYYY-MM-DD.log` and `.json`. Browser profiles, screenshots, and execution logs are ignored because they may contain private event/player information; placeholder directories are retained.
+
+When a browser operation fails, the CLI also preserves a timestamped evidence bundle instead of discarding the failing state: a full-page error screenshot in `screenshots/`, a Playwright trace (with screenshots, DOM snapshots, and sources) in `traces/`, and a JSON snapshot in `artifacts/`. The JSON includes the page URL/title, sanitized body structure, an accessibility snapshot, console/page errors, and failed requests. Scripts, embedded frames, form values, URL-bearing attributes, and query strings are omitted or redacted. Match-level failures use the match ID in every filename and processing continues when it is safe to do so.
 
 ## Development
 

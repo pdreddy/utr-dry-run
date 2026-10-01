@@ -6,7 +6,7 @@ import { readMatches, writeMatches } from './csv/store.ts';
 import { resolveBracket, validateBracket } from './bracket/bracket.ts';
 import type { MatchRow } from './models/match.ts';
 import { Logger } from './utils/logger.ts';
-import { openSession } from './utr/browser.ts';
+import { openSession, startBrowserDiagnostics } from './utr/browser.ts';
 import { ensureAuthenticated } from './utr/login.ts';
 import { automationTarget, drawEditorUrl, eventUrl, openAndVerifyEvent, siteOrigin } from './utr/event.ts';
 import { UtrDrawEditor } from './utr/drawEditor.ts';
@@ -71,18 +71,26 @@ export function selectRows(rows: MatchRow[], operation: Operation, mode: 'dry'|'
   return pending.slice(0, 1);
 }
 
-async function withBrowser<T>(options: ModeOptions, work: (page: import('playwright').Page) => Promise<T>): Promise<T> {
+async function withBrowser<T>(options: ModeOptions, work: (
+  page: import('playwright').Page,
+  diagnostics: Awaited<ReturnType<typeof startBrowserDiagnostics>>
+) => Promise<T>): Promise<T> {
   const session = await openSession();
+  let diagnostics: Awaited<ReturnType<typeof startBrowserDiagnostics>> | undefined;
   try {
     console.log(`Opening ${siteOrigin()} ...`);
     const authenticatedPage = await ensureAuthenticated(session.page);
     console.log(`UTR LOGIN: ${authenticatedPage ? 'PASS' : 'FAIL'}`);
     if (!authenticatedPage) throw new Error('Authentication was not detected before timeout; see screenshots/authentication-timeout.png');
     session.page = authenticatedPage;
-    return await work(session.page);
+    diagnostics = await startBrowserDiagnostics(session.context, session.page);
+    return await work(session.page, diagnostics);
   } catch (error) {
+    if (!diagnostics) diagnostics = await startBrowserDiagnostics(session.context, session.page).catch(() => undefined);
+    const evidence = await diagnostics?.capture('browser', error).catch(() => undefined);
     // Show the reason immediately; --keep-open would otherwise hold it back until Ctrl+C.
     console.error(`\nFAILED: ${(error as Error).message}`);
+    if (evidence) console.error(`EVIDENCE: ${[evidence.screenshot, evidence.trace, evidence.snapshot].filter(Boolean).join(' ')}`);
     throw error;
   } finally {
     if (options.keepOpen) {
@@ -93,6 +101,7 @@ async function withBrowser<T>(options: ModeOptions, work: (page: import('playwri
         process.once('SIGTERM', finish);
       });
     }
+    await diagnostics?.finish();
     await session.close();
   }
 }
@@ -104,7 +113,7 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
   if (mode === 'dry') { printPlan(selected); return; }
   const logger = new Logger();
   const totals: Record<string, number> = {};
-  await withBrowser(options, async page => {
+  await withBrowser(options, async (page, diagnostics) => {
     const event = await openAndVerifyEvent(page, mode === 'live');
     console.log(`UTR EVENT:\n${event.name}\n\nEVENT VERIFIED: ${event.verified ? 'YES' : 'NO'}`);
     await discoverControls(page);
@@ -145,6 +154,8 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
         if (!results.includes('NEEDS_REVIEW')) results.push('NEEDS_REVIEW');
         row.utr_sync_status = 'NEEDS_REVIEW';
         console.error(`${row.match_id} NEEDS_REVIEW: ${message}`);
+        const evidence = await diagnostics.capture(row.match_id, error).catch(() => undefined);
+        if (evidence) console.error(`  EVIDENCE: ${[evidence.screenshot, evidence.trace, evidence.snapshot].filter(Boolean).join(' ')}`);
         logger.log({ ...row, action: operation, result: 'NEEDS_REVIEW', error: message });
       }
       for (const result of results) { const key = result.split(':')[0]!; totals[key] = (totals[key] ?? 0) + 1; }

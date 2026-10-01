@@ -4,7 +4,7 @@ import { parseMatches } from '../src/csv/store.ts';
 import { duplicateKey, parseScore, resolveBracket, validateBracket, validateWinner } from '../src/bracket/bracket.ts';
 import { namesEqual } from '../src/utils/names.ts';
 import type { MatchRow } from '../src/models/match.ts';
-import { shouldRunHeadless, validatedCdpUrl } from '../src/utr/browser.ts';
+import { redactDiagnosticText, redactDiagnosticUrl, shouldRunHeadless, validatedCdpUrl } from '../src/utr/browser.ts';
 import { loginTimeout } from '../src/utr/login.ts';
 import { drawEditorUrl, eventUrl } from '../src/utr/event.ts';
 import { lineNamesPlayer, renderedScoreMatches, roundLabels, scoreFieldValues } from '../src/utr/eventPage.ts';
@@ -62,6 +62,11 @@ describe('CSV and bracket automation', () => {
   it('only allows CDP attachment to a local browser', () => {
     assert.equal(validatedCdpUrl('http://127.0.0.1:9222'), 'http://127.0.0.1:9222/');
     assert.throws(() => validatedCdpUrl('http://example.com:9222'), /localhost/);
+  });
+
+  it('redacts secrets and URL queries from browser diagnostics', () => {
+    assert.equal(redactDiagnosticUrl('https://app.utrsports.net/events/1?token=secret#draw'), 'https://app.utrsports.net/events/1?[REDACTED]');
+    assert.equal(redactDiagnosticText('password=hunter2 Authorization: Bearer abc.def'), 'password=[REDACTED] Authorization=[REDACTED]');
   });
   it('accepts only canonical UTR event URLs and preserves draw parameters', () => {
     const oldUrl = process.env.UTR_EVENT_URL, oldId = process.env.UTR_EVENT_ID;
