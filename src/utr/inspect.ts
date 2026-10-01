@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Page } from 'playwright';
 import { screenshot } from './browser.ts';
+import { UtrDrawEditor } from './drawEditor.ts';
 
 /**
  * Writes a structural snapshot of the page the account owner is looking at:
@@ -84,18 +85,29 @@ export async function inspectAdminMenus(page: Page, dir = process.env.UTR_LOG_DI
   return file;
 }
 
-/** Opens (never fills or saves) the first player dropdown and first Score dialog in the draw editor, recording each. */
-export async function inspectDrawEditor(page: Page, editorUrl: string): Promise<string[]> {
+/**
+ * Opens (never fills or saves) the first player dropdown and first Score dialog in the
+ * draw editor, recording each. The player dropdown is captured twice: empty (to see
+ * "No players to add..."), then after typing `query` (to see real result rows), since
+ * UTR's picker is a type-to-filter search rather than a static list.
+ */
+export async function inspectDrawEditor(page: Page, editorUrl: string, query = 'a'): Promise<string[]> {
   const saved: string[] = [];
-  await page.goto(editorUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
-  await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
-  await page.waitForTimeout(1_500);
+  const editor = new UtrDrawEditor(page, editorUrl);
+  await editor.open();
   saved.push(await inspectPage(page, 'draw-editor'));
   const slot = page.getByText('Select a player', { exact: true }).first();
   if (await slot.isVisible().catch(() => false)) {
     await slot.click({ timeout: 3_000 }).catch(() => undefined);
     await page.waitForTimeout(800);
-    saved.push(await inspectPage(page, 'player-dropdown'));
+    saved.push(await inspectPage(page, 'player-dropdown-empty'));
+    const input = page.locator('input:visible').last();
+    if (await input.count()) {
+      console.log(`Typing "${query}" into the player filter...`);
+      await input.pressSequentially(query, { delay: 60 }).catch(() => undefined);
+      await page.waitForTimeout(1_000);
+      saved.push(await inspectPage(page, 'player-dropdown-filtered'));
+    }
     await page.keyboard.press('Escape');
     await page.waitForTimeout(300);
   }

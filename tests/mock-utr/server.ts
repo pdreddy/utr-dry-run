@@ -15,8 +15,12 @@ export interface MockMatch { id: number; round: string; a: string; b: string; sc
 export interface EditorSlot { a?: string; b?: string; score?: { a: number[]; b: number[] } }
 export interface MockState {
   eventId: number; eventName: string; players: string[]; matches: MockMatch[]; writes: { method: string; path: string }[];
-  /** Event Desk draw editor: 8 Round of 16 slots and 4 quarterfinal slots that fill from results. */
-  editor: { r16: EditorSlot[]; qf: EditorSlot[]; published: boolean };
+  /**
+   * Event Desk draw editor: 8 Round of 16 slots and 4 quarterfinal slots that fill from
+   * results, plus the draw's roster. Like the real editor, a player must be added to
+   * `roster` (via the sidebar's "Add to Draw") before the match-card picker can find them.
+   */
+  editor: { r16: EditorSlot[]; qf: EditorSlot[]; published: boolean; roster: number[] };
 }
 
 export const EVENT_ID = 388079;
@@ -103,10 +107,21 @@ function editorHtml(state: MockState): string {
   return `<section><h2>Round of 16</h2>${r16}</section><section><h2>Quarterfinals</h2>${qf}</section>`;
 }
 
+function rosterHtml(state: MockState, query = ''): string {
+  const q = query.trim().toLowerCase();
+  // Not deduplicated by name: two different players can share a display name, and the
+  // roster must show (and let the automation tell apart) each one separately.
+  const notInDraw = state.players.map((name, index) => ({ name, index })).filter(p => !state.editor.roster.includes(p.index));
+  const shown = q ? notInDraw.filter(p => p.name.toLowerCase().includes(q)) : notInDraw;
+  const row = (p: { name: string; index: number }) => `<li><span class="rn">${escapeHtml(p.name)}</span> <button type="button" class="more" data-index="${p.index}">...</button></li>`;
+  return `<div>PLAYERS NOT IN DRAW (${notInDraw.length})</div><ul id="roster">${shown.map(row).join('')}</ul>`;
+}
+
 function editorPage(state: MockState): string {
   return `<!doctype html><html><head><title>${escapeHtml(state.eventName)} | UTR</title>
 <style>.cols{display:flex;gap:40px}.card{border:1px solid #ccc;margin:8px;padding:8px;width:340px}.slot{display:block;margin:4px 0}.set{margin-left:10px}
 .empty{color:#d0107c;cursor:pointer}ul.dd{border:1px solid #333;background:#fff;list-style:none;padding:0;margin:2px;max-height:160px;overflow:auto}ul.dd li{padding:4px;cursor:pointer}
+#roster{list-style:none;padding:0}#roster li{padding:4px}.rowmenu{border:1px solid #333;background:#fff;padding:4px;position:absolute}
 [role=dialog]{position:fixed;top:60px;left:420px;background:#fff;border:2px solid #333;padding:12px}</style></head>
 <body><header><a data-testid="user-menu" href="/profile/1">My profile</a></header>
 <h1>${escapeHtml(state.eventName)}</h1>
@@ -114,6 +129,8 @@ function editorPage(state: MockState): string {
 <div id="groupView"><div>Round Robin, Co-ed, Two Sets w/ Match Tiebreaker, 8 Players</div><h2>Round 1</h2>
   <div class="card"><span class="mn">Match #1</span><div class="slot">Pritish Singhal</div><div class="slot">Bye</div><button type="button">Score</button></div></div>
 <div id="playoffView" style="display:none"><div>Single Elimination, Co-ed, Two Sets w/ Match Tiebreaker, 16 Players</div><span id="saved">Saved</span> <button type="button" id="publish">PUBLISH</button>
+<input placeholder="Filter Players" id="pfilter">
+<div id="rosterPanel">${rosterHtml(state)}</div>
 <div class="cols">${editorHtml(state)}</div></div>
 <script>
 // Like the real editor, a fresh load always shows the default draw (Group 01) until Playoff is chosen.
@@ -123,14 +140,42 @@ const call = (method, url, body) => fetch(url, { method, headers: { 'content-typ
 document.getElementById('publish').onclick = () => call('POST', '/api/v1/draw/publish', {}).then(refresh);
 // Like the real editor's autosave, a slot pick or score save updates the bracket in place, with no page reload.
 async function refresh() { document.querySelector('.cols').innerHTML = (await fetch('/api/v1/draw/fragment').then(r => r.json())).html; bind(); }
+async function refreshRoster() { document.getElementById('rosterPanel').innerHTML = (await fetch('/api/v1/draw/roster/html?query=' + encodeURIComponent(document.getElementById('pfilter').value)).then(r => r.json())).html; bindRoster(); }
+document.getElementById('pfilter').addEventListener('input', refreshRoster);
+function bindRoster() {
+  document.querySelectorAll('#roster .more').forEach(button => button.onclick = () => {
+    document.querySelectorAll('.rowmenu').forEach(x => x.remove());
+    const menu = document.createElement('div'); menu.className = 'rowmenu';
+    menu.innerHTML = '<div class="mi" role="menuitem">Add to Draw</div><div class="mi" role="menuitem">View Profile</div>';
+    menu.querySelector('.mi').onclick = () => call('POST', '/api/v1/draw/roster', { index: Number(button.dataset.index) }).then(() => { refreshRoster(); refresh(); });
+    button.after(menu);
+  });
+}
+bindRoster();
 function bind() {
-  document.querySelectorAll('.empty').forEach(el => el.onclick = async () => {
-    document.querySelectorAll('ul.dd').forEach(x => x.remove());
-    const card = el.closest('.card'); const names = await fetch('/api/v1/players?query=%20%20').then(r => r.json());
-    const list = document.createElement('ul'); list.className = 'dd';
-    names.forEach(p => { const li = document.createElement('li'); li.textContent = p.name + '\\n' + p.rating;
-      li.onclick = () => call('PUT', '/api/v1/draw/' + card.dataset.round + '/' + card.dataset.n + '/slot', { slot: el.dataset.slot, name: p.name }).then(refresh); list.append(li); });
-    el.after(list);
+  // Like the real picker, this is type-to-filter and only searches this draw's roster:
+  // it shows "No players to add..." for a player not yet added to the draw, however typed.
+  document.querySelectorAll('.empty').forEach(el => el.onclick = () => {
+    document.querySelectorAll('.picker').forEach(x => x.remove());
+    const card = el.closest('.card'), round = card.dataset.round, n = card.dataset.n, slotKey = el.dataset.slot;
+    const picker = document.createElement('div'); picker.className = 'picker';
+    picker.innerHTML = '<input placeholder="Type to filter players...">' +
+      '<div class="results">No players to add...</div>' +
+      '<div class="quick"><button type="button">Clear</button><button type="button">Bye</button></div>';
+    el.replaceWith(picker);
+    const input = picker.querySelector('input'), results = picker.querySelector('.results');
+    input.addEventListener('input', async () => {
+      const q = input.value.trim();
+      if (q.length < 2) { results.textContent = 'No players to add...'; return; }
+      const names = await fetch('/api/v1/draw/players?query=' + encodeURIComponent(q)).then(r => r.json());
+      if (!names.length) { results.textContent = 'No players to add...'; return; }
+      results.innerHTML = '';
+      const list = document.createElement('ul'); list.setAttribute('role', 'listbox');
+      names.forEach(p => { const li = document.createElement('li'); li.setAttribute('role', 'option'); li.textContent = p.name + '\\n' + p.rating;
+        li.onclick = () => call('PUT', '/api/v1/draw/' + round + '/' + n + '/slot', { slot: slotKey, name: p.name }).then(refresh).catch(e => alert(e.message)); list.append(li); });
+      results.append(list);
+    });
+    input.focus();
   });
   document.querySelectorAll('.scorebtn').forEach(button => button.onclick = () => {
     const d = document.createElement('div'); d.setAttribute('role', 'dialog');
@@ -152,7 +197,7 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
 }
 
 export async function startMockUtr(port = 0): Promise<{ origin: string; eventUrl: string; state: MockState; close(): Promise<void> }> {
-  const state: MockState = { eventId: EVENT_ID, eventName: EVENT_NAME, players: PLAYERS, matches: [], writes: [], editor: { r16: Array.from({ length: 8 }, () => ({})), qf: Array.from({ length: 4 }, () => ({})), published: false } };
+  const state: MockState = { eventId: EVENT_ID, eventName: EVENT_NAME, players: PLAYERS, matches: [], writes: [], editor: { r16: Array.from({ length: 8 }, () => ({})), qf: Array.from({ length: 4 }, () => ({})), published: false, roster: [] as number[] } };
   let nextId = 9001;
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -165,6 +210,20 @@ export async function startMockUtr(port = 0): Promise<{ origin: string; eventUrl
       if (req.method === 'GET' && url.pathname === `/events/${EVENT_ID}`) return send(200, eventHtml(state), 'text/html');
       if (req.method === 'GET' && url.pathname === `/events/${EVENT_ID}/draws`) return send(200, editorPage(state), 'text/html');
       if (req.method === 'GET' && url.pathname === '/api/v1/draw/fragment') return send(200, { html: editorHtml(state) });
+      if (req.method === 'GET' && url.pathname === '/api/v1/draw/roster/html') return send(200, { html: rosterHtml(state, url.searchParams.get('query') ?? '') });
+      if (req.method === 'POST' && url.pathname === '/api/v1/draw/roster') {
+        const body = await readJson(req);
+        const index = Number(body.index);
+        if (!Number.isInteger(index) || !state.players[index]) return send(400, { error: 'unknown player' });
+        if (state.editor.roster.includes(index)) return send(409, { error: 'already in draw' });
+        state.editor.roster.push(index);
+        return send(200, { ok: true });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/v1/draw/players') {
+        const query = (url.searchParams.get('query') ?? '').toLowerCase();
+        return send(200, state.editor.roster.filter(index => query.length >= 2 && state.players[index]!.toLowerCase().includes(query))
+          .map(index => ({ id: String(index), name: state.players[index]!, rating: (7 + (index % 5) / 2).toFixed(2) })));
+      }
       if (req.method === 'POST' && url.pathname === '/api/v1/draw/publish') { state.editor.published = true; return send(200, { ok: true }); }
       const slotRoute = url.pathname.match(/^\/api\/v1\/draw\/(r16|qf)\/(\d+)\/(slot|score)$/);
       if (req.method === 'PUT' && slotRoute) {
@@ -173,7 +232,7 @@ export async function startMockUtr(port = 0): Promise<{ origin: string; eventUrl
         if (!slot) return send(404, { error: 'unknown match' });
         if (slotRoute[3] === 'slot') {
           const key = String(body.slot) === '0' ? 'a' : 'b';
-          if (!state.players.includes(String(body.name))) return send(400, { error: 'unknown player' });
+          if (!state.editor.roster.some(index => state.players[index] === String(body.name))) return send(400, { error: 'player is not on the draw roster' });
           if (Object.values(state.editor.r16).some(m => m.a === body.name || m.b === body.name)) return send(409, { error: 'player already placed' });
           slot[key] = String(body.name); return send(200, { ok: true });
         }

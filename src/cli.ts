@@ -113,6 +113,15 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
     if (eventPage instanceof UtrDrawEditor) {
       await eventPage.open();
       console.log(`DRAW EDITOR: ${await eventPage.verifyDraw()}`);
+      if (operation !== 'scores') {
+        // The match-card picker only finds players already on this draw's roster, so add
+        // every Round of 16 name first (later rounds fill from results, not from the roster).
+        const names = [...new Set(selected.filter(row => row.round === 'R16').flatMap(row => [row.player_a, row.player_b]))];
+        if (names.length) {
+          const roster = await eventPage.addPlayersToDraw(names, mode === 'live');
+          for (const [name, status] of Object.entries(roster)) console.log(`ROSTER ${name}: ${status}`);
+        }
+      }
     }
     if (mode === 'live' && !options.all && !options.only) console.log(`LIVE SAFETY GATE: processing ${selected.length} match(es). Confirm in UTR, then re-run with --all.`);
     for (const row of selected) {
@@ -172,7 +181,7 @@ async function capture(options: ModeOptions): Promise<void> {
 }
 
 /** Interactive: the account owner navigates to a view, presses Enter, and the page structure is saved. */
-async function inspect(options: ModeOptions): Promise<void> {
+async function inspect(options: ModeOptions, file: string): Promise<void> {
   await withBrowser({ ...options, keepOpen: false }, async page => {
     const event = await openAndVerifyEvent(page, false);
     console.log(`UTR EVENT: ${event.name}`);
@@ -180,8 +189,10 @@ async function inspect(options: ModeOptions): Promise<void> {
     console.log(`SAVED: ${await inspectAdminMenus(page)}  (opened the Actions / Edit / Manage menus; nothing was clicked inside them)`);
     const editor = drawEditorUrl();
     if (editor) {
-      console.log('Opening the Event Desk draw editor (opens a player dropdown and a Score dialog, then Escape; nothing is selected or saved)...');
-      try { for (const file of await inspectDrawEditor(page, editor)) console.log(`SAVED: ${file}`); }
+      // Search for a real name from the CSV, so the captured result rows look like the real picker, not a dummy query.
+      const query = (fs.existsSync(file) ? load(file).rows[0]?.player_a : undefined)?.split(' ')[0]?.slice(0, 3) ?? 'a';
+      console.log('Opening the Event Desk draw editor (opens the player picker and a Score dialog, then Escape; nothing is selected or saved)...');
+      try { for (const file of await inspectDrawEditor(page, editor, query)) console.log(`SAVED: ${file}`); }
       catch (error) { console.error(`draw editor inspection failed: ${(error as Error).message}`); }
     }
     console.log('\nAutomatic capture finished. Everything needed is in logs/utr-inspect-*.json. Press Ctrl+C to close, or continue for optional extra views.');
@@ -217,7 +228,7 @@ async function main(): Promise<void> {
     only: args.includes('--only') ? args[args.indexOf('--only') + 1] : undefined
   };
   if (command === 'capture') { await capture(options); return; }
-  if (command === 'inspect') { await inspect(options); return; }
+  if (command === 'inspect') { await inspect(options, file); return; }
   if (options.only !== undefined && (!options.only || options.only.startsWith('--'))) throw new Error('--only requires a match_id');
   if (options.only && options.all) throw new Error('Use either --only or --all, not both');
   await browserRun(file, command as Operation, options);

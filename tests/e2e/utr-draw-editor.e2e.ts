@@ -113,7 +113,10 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 600
     const before = writes();
     const { code, out } = await cli(['create', review, '--live', '--all']);
     assert.equal(code, 2, out);
-    assert.match(out, /NEEDS_REVIEW: player A ambiguous/);
+    // Caught at roster time (two players share this display name), so the player is never
+    // added, and the match-card search reports the slot as missing, not ambiguous.
+    assert.match(out, /ROSTER Aarav Shah: NEEDS_REVIEW: ambiguous/);
+    assert.match(out, /NEEDS_REVIEW: player A missing/);
     assert.equal(writes(), before);
   });
 
