@@ -12,7 +12,7 @@ import { eventUrl, openAndVerifyEvent, siteOrigin } from './utr/event.ts';
 import { discoverControls } from './utr/discovery.ts';
 import { UtrEventPage } from './utr/eventPage.ts';
 import { recordApiCalls } from './utr/network.ts';
-import { inspectPage } from './utr/inspect.ts';
+import { inspectAdminMenus, inspectPage } from './utr/inspect.ts';
 import readline from 'node:readline/promises';
 
 type ModeOptions = { dryRun?: boolean; browserDryRun?: boolean; live?: boolean; all?: boolean; keepOpen?: boolean; only?: string };
@@ -168,13 +168,13 @@ async function inspect(options: ModeOptions): Promise<void> {
     const event = await openAndVerifyEvent(page, false);
     console.log(`UTR EVENT: ${event.name}`);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const steps = ['playoff', 'tbd-card', 'match-menu', 'divisions', 'dialog'];
+    console.log(`SAVED: ${await inspectAdminMenus(page)}  (opened the Actions / Edit / Manage menus; nothing was clicked inside them)`);
+    const steps = ['playoff', 'event-desk', 'event-desk-match', 'divisions'];
     const prompts: Record<string, string> = {
       playoff: 'Show MATCHUPS > Playoff > Round of 16 (the TBD bracket)',
-      'tbd-card': 'Click or hover a TBD match card (or its edit/⋮ control) so anything that lets you assign players shows',
-      'match-menu': 'Open any menu/options available on a match card, if there is one',
-      divisions: 'Open the DIVISIONS tab and the Playoff draw there (look for Edit draw / Manage / Assign players)',
-      dialog: 'Open the screen where you pick a player for a slot or enter a score (do NOT save anything)'
+      'event-desk': 'Open Manage > Event Desk (or wherever you assign players / enter scores) and show the Playoff matches there',
+      'event-desk-match': 'On that screen, open ONE match for editing so the player picker or score inputs are visible (do NOT save)',
+      divisions: 'Open the DIVISIONS tab (and the Playoff draw there, if it lists one)'
     };
     for (const step of steps) {
       const answer = await rl.question(`\n${prompts[step]}, then press Enter here (type "skip" to skip this step, "done" to finish)... `);
