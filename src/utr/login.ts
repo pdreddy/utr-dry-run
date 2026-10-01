@@ -1,7 +1,7 @@
 import type { Page } from 'playwright';
 import { firstVisible, screenshot } from './browser.ts';
 import { SELECTORS } from './selectors.ts';
-import { siteOrigin } from './event.ts';
+import { drawEditorUrl, siteOrigin } from './event.ts';
 
 const CREDENTIAL_FIELDS = [
   'input[type="email"]', 'input[type="password"]',
@@ -19,6 +19,14 @@ async function authenticationState(page: Page): Promise<'authenticated'|'login'|
   if (await firstVisible(page, SELECTORS.login)) return 'login';
   const pathname = new URL(page.url()).pathname.toLocaleLowerCase();
   if (/\/(login|signin|sign-in|auth)(\/|$)/.test(pathname)) return 'login';
+  // The UTR home page does not consistently render an account-menu marker even
+  // for a valid saved session. The draw editor is access-controlled, so its own
+  // visible controls are reliable positive evidence after login checks above.
+  if (/\/events\/\d+\/draws\/?$/.test(pathname)) {
+    const editor = page.getByText(/^Match #\d+/).first();
+    const rounds = page.getByText(/^(Round of 16|Quarterfinals|Semifinals|Final)/i).first();
+    if (await editor.isVisible().catch(() => false) || await rounds.isVisible().catch(() => false)) return 'authenticated';
+  }
   // Do not infer authentication from generic cookies/storage: analytics state
   // exists for signed-out visitors and previously caused the browser to flash
   // open, be treated as logged in, and immediately close on the next error.
@@ -45,8 +53,22 @@ export async function ensureAuthenticated(page: Page): Promise<Page | undefined>
   // The root is a client-rendered app. Let its session check render either the
   // account menu or login control before deciding that neither is present.
   await page.waitForTimeout(1_500);
-  const existing = await authenticatedPage(page.context().pages());
+  let existing = await authenticatedPage(page.context().pages());
   if (existing) return existing;
+  // A persisted UTR session can look anonymous on the site root. Probe the
+  // configured, access-controlled draw editor before asking the user to log in
+  // again; this avoids a false login prompt for an already authenticated Mac.
+  const editorUrl = drawEditorUrl();
+  if (editorUrl) {
+    await page.goto(editorUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 }).catch(() => undefined);
+    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
+    await Promise.race([
+      page.getByText(/^Match #\d+/).first().waitFor({ state: 'visible', timeout: 10_000 }),
+      page.locator('input[type="email"], input[type="password"], [data-testid="modal.login-popup.overlay"]').first().waitFor({ state: 'visible', timeout: 10_000 })
+    ]).catch(() => undefined);
+    existing = await authenticatedPage(page.context().pages());
+    if (existing) return existing;
+  }
   await screenshot(page, 'authentication-required');
   if (process.env.UTR_HEADLESS?.toLocaleLowerCase() === 'true') {
     console.error('Authentication was not detected in headless mode. Run once with UTR_HEADLESS=false to complete login/MFA.');

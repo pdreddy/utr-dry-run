@@ -20,6 +20,7 @@ export const SELECTORS = {
     'button:has-text("Join / Sign In")', 'a:has-text("Join / Sign In")'
   ],
   login: [
+    '[data-testid="modal.login-popup.overlay"]',
     'input[type="password"]', 'input[type="email"]',
     'button:has-text("Log in")', 'button:has-text("Sign in")',
     'a:has-text("Log in")', 'a:has-text("Sign in")',
