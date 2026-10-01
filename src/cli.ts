@@ -108,6 +108,7 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
     const event = await openAndVerifyEvent(page, mode === 'live');
     console.log(`UTR EVENT:\n${event.name}\n\nEVENT VERIFIED: ${event.verified ? 'YES' : 'NO'}`);
     await discoverControls(page);
+    console.log(`TARGET: ${automationTarget()} (${automationTarget() === 'drawEditor' ? drawEditorUrl() : eventUrl()})`);
     const eventPage = automationTarget() === 'drawEditor' ? new UtrDrawEditor(page, drawEditorUrl()!) : new UtrEventPage(page, eventUrl()!);
     if (eventPage instanceof UtrDrawEditor) {
       await eventPage.open();

@@ -62,7 +62,8 @@ export async function openAndVerifyEvent(page: Page, live: boolean): Promise<{ v
   if (!url) throw new Error('Set UTR_EVENT_URL or UTR_EVENT_ID');
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 });
   await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
-  const heading = page.getByRole('heading').first();
+  // The first heading on the real site is the account menu (the user's own name), so use the event title element.
+  const heading = page.locator('[data-testid="event-profile.header.event-title"], h1').first();
   const name = (await heading.textContent().catch(() => ''))?.trim() || (await page.title());
   const expected = (process.env.UTR_EVENT_NAME || readUtrConfig().eventName)?.trim();
   const verified = Boolean(expected && name.toLocaleLowerCase().includes(expected.toLocaleLowerCase()));
