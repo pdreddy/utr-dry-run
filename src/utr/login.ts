@@ -14,11 +14,30 @@ export function loginTimeout(value = process.env.UTR_LOGIN_TIMEOUT_MS): number {
   return Number.isFinite(parsed) && parsed >= 10_000 ? parsed : 600_000;
 }
 
+/** Identifies storage names that represent a login session without reading/logging secret values. */
+export function isAuthenticationStorageKey(name: string): boolean {
+  return /auth|access.?token|id.?token|refresh.?token|jwt|session/i.test(name)
+    && !/analytics|anonymous|consent/i.test(name);
+}
+
+async function hasAuthenticationStorage(page: Page): Promise<boolean> {
+  const cookieNames = (await page.context().cookies(page.url()).catch(() => [])).map(cookie => cookie.name);
+  if (cookieNames.some(isAuthenticationStorageKey)) return true;
+  const storageKeys = await page.evaluate(() => [
+    ...Object.keys(localStorage), ...Object.keys(sessionStorage)
+  ]).catch(() => [] as string[]);
+  return storageKeys.some(isAuthenticationStorageKey);
+}
+
 async function authenticationState(page: Page): Promise<'authenticated'|'login'|'unknown'> {
   if (await firstVisible(page, SELECTORS.authenticated)) return 'authenticated';
   if (await firstVisible(page, SELECTORS.login)) return 'login';
   const pathname = new URL(page.url()).pathname.toLocaleLowerCase();
   if (/\/(login|signin|sign-in|auth)(\/|$)/.test(pathname)) return 'login';
+  // UTR does not always render a user-menu marker on its home page. A named
+  // auth/session token in this isolated UTR browser profile is stronger evidence
+  // than generic storage; only names are inspected and no secret value is read.
+  if (await hasAuthenticationStorage(page)) return 'authenticated';
   // The UTR home page does not consistently render an account-menu marker even
   // for a valid saved session. The draw editor is access-controlled, so its own
   // visible controls are reliable positive evidence after login checks above.

@@ -5,7 +5,7 @@ import { duplicateKey, parseScore, resolveBracket, validateBracket, validateWinn
 import { namesEqual } from '../src/utils/names.ts';
 import type { MatchRow } from '../src/models/match.ts';
 import { shouldRunHeadless, validatedCdpUrl } from '../src/utr/browser.ts';
-import { loginTimeout } from '../src/utr/login.ts';
+import { isAuthenticationStorageKey, loginTimeout } from '../src/utr/login.ts';
 import { drawEditorUrl, eventUrl } from '../src/utr/event.ts';
 import { lineNamesPlayer, renderedScoreMatches, roundLabels, scoreFieldValues } from '../src/utr/eventPage.ts';
 import { endpointTemplate, extractId, shapeOf } from '../src/utr/network.ts';
@@ -58,6 +58,14 @@ describe('CSV and bracket automation', () => {
   });
   it('validates the manual login timeout', () => {
     assert.equal(loginTimeout('120000'), 120_000); assert.equal(loginTimeout('bad'), 600_000);
+  });
+  it('recognizes authentication storage names without mistaking analytics for a session', () => {
+    assert.equal(isAuthenticationStorageKey('accessToken'), true);
+    assert.equal(isAuthenticationStorageKey('utr_session'), true);
+    assert.equal(isAuthenticationStorageKey('auth0.user'), true);
+    assert.equal(isAuthenticationStorageKey('analytics_session'), false);
+    assert.equal(isAuthenticationStorageKey('ajs_anonymous_id'), false);
+    assert.equal(isAuthenticationStorageKey('_ga'), false);
   });
   it('only allows CDP attachment to a local browser', () => {
     assert.equal(validatedCdpUrl('http://127.0.0.1:9222'), 'http://127.0.0.1:9222/');

@@ -18,6 +18,8 @@ The tool never accepts, retrieves, or stores a UTR password. If the Playwright p
 
 Run `./run.sh login` for the initial sign-in. It opens UTR and waits while you click the sign-in control, enter the credentials directly into UTR's browser form, and submit it yourself. The automation never clicks a sign-in button, so it cannot accidentally submit empty credentials. After UTR confirms the session, the command closes the browser and retains the authenticated profile. It does not start roster or match automation. Then run `./run.sh dry-run`.
 
+The automation profile is separate from your normal Chrome profile, so being signed in in an ordinary Chrome window does not automatically sign in `.playwright/utr-profile`. Use `./run.sh login` once for that profile, or use the documented `UTR_CDP_URL` setup below to attach to an already authenticated Chrome instance.
+
 ```bash
 # macOS
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --user-data-dir="$HOME/.utr-chrome"
