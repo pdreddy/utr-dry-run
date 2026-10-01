@@ -112,7 +112,7 @@ async function browserRun(file: string, operation: 'create'|'scores'|'sync', opt
         process.once('SIGTERM', finish);
       });
     }
-    await session.context.close();
+    await session.close();
   }
 }
 

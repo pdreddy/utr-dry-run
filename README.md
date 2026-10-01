@@ -14,6 +14,19 @@ The supplied draw URL is stored in `utr.config.json`. `UTR_EVENT_URL` or `UTR_EV
 
 Leave `UTR_HEADLESS=false` for the first run. Headed mode is not inferred from `$DISPLAY` because Windows and macOS normally do not define it. The browser remains open for up to ten minutes (configurable with `UTR_LOGIN_TIMEOUT_MS`) so the account owner can complete legitimate login/MFA. Set `UTR_HEADLESS=true` only after the persistent profile has been authenticated.
 
+The tool never accepts, retrieves, or stores a UTR password. If the Playwright profile cannot complete login, it can instead attach to a Chrome instance that **you** opened and authenticated. Close all Chrome windows, start Chrome with a dedicated temporary profile and localhost-only debugging, log into UTR normally, then set `UTR_CDP_URL=http://127.0.0.1:9222`:
+
+```bash
+# macOS
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --user-data-dir="$HOME/.utr-chrome"
+# Windows PowerShell
+& "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --user-data-dir="$env:USERPROFILE\.utr-chrome"
+# Linux
+google-chrome --remote-debugging-port=9222 --remote-debugging-address=127.0.0.1 --user-data-dir="$HOME/.utr-chrome"
+```
+
+Use a dedicated profile rather than Chrome's normal profile. The connection is rejected unless it targets localhost, and the CLI will not close an externally managed Chrome instance.
+
 ## Commands and safety modes
 
 ```bash
