@@ -20,9 +20,9 @@ export const SELECTORS = {
     'button:has-text("Login")', 'a:has-text("Login")',
     'button:has-text("Join / Sign In")', 'a:has-text("Join / Sign In")'
   ],
+  // Never match a bare "Manage": it resolves to the footer's "Manage Cookies" link.
   eventDesk: [
-    'a:has-text("Event Desk")', 'button:has-text("Event Desk")',
-    'a:has-text("Manage")', '[data-testid="event-desk"]'
+    'a:text-is("Event Desk")', 'button:text-is("Event Desk")', '[data-testid="event-desk"]'
   ],
   createMatch: [
     'button:has-text("Add Match")', 'button:has-text("Create Match")',
@@ -58,4 +58,11 @@ export const SELECTORS = {
     'button:has-text("Submit Score")', 'button:has-text("Post Score")',
     'button:has-text("Save Score")', 'button:has-text("Save")'
   ]
+} as const;
+
+/** Draw editor (Event Desk): empty-slot label and the controls that must never be clicked. */
+export const EDITOR = {
+  emptySlot: 'Select a player',
+  matchHeader: /^Match #(\d+)/,
+  forbiddenClick: /publish|unpublish|delete|remove|reset|clear/i
 } as const;

@@ -24,7 +24,7 @@ let csv: string;
 
 function env(overrides: Record<string, string> = {}): NodeJS.ProcessEnv {
   return {
-    ...process.env, UTR_EVENT_URL: mock.eventUrl, UTR_EVENT_ID: '', UTR_EVENT_NAME: EVENT_NAME, UTR_HEADLESS: 'true',
+    ...process.env, UTR_EVENT_URL: mock.eventUrl, UTR_EVENT_ID: '', UTR_EVENT_NAME: EVENT_NAME, UTR_HEADLESS: 'true', UTR_TARGET: 'eventPage',
     UTR_CONFIG: path.join(work, 'none.json'), UTR_CDP_URL: '', UTR_PROFILE_DIR: path.join(work, 'profile'),
     UTR_SCREENSHOT_DIR: path.join(work, 'screenshots'), UTR_LOG_DIR: path.join(work, 'logs'),
     UTR_BROWSER_EXECUTABLE: process.env.UTR_BROWSER_EXECUTABLE ?? (fs.existsSync(BUNDLED_CHROMIUM) ? BUNDLED_CHROMIUM : ''),

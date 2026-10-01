@@ -8,7 +8,8 @@ import type { MatchRow } from './models/match.ts';
 import { Logger } from './utils/logger.ts';
 import { openSession } from './utr/browser.ts';
 import { ensureAuthenticated } from './utr/login.ts';
-import { drawEditorUrl, eventUrl, openAndVerifyEvent, siteOrigin } from './utr/event.ts';
+import { automationTarget, drawEditorUrl, eventUrl, openAndVerifyEvent, siteOrigin } from './utr/event.ts';
+import { UtrDrawEditor } from './utr/drawEditor.ts';
 import { discoverControls } from './utr/discovery.ts';
 import { UtrEventPage } from './utr/eventPage.ts';
 import { recordApiCalls } from './utr/network.ts';
@@ -107,7 +108,11 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
     const event = await openAndVerifyEvent(page, mode === 'live');
     console.log(`UTR EVENT:\n${event.name}\n\nEVENT VERIFIED: ${event.verified ? 'YES' : 'NO'}`);
     await discoverControls(page);
-    const eventPage = new UtrEventPage(page, eventUrl()!);
+    const eventPage = automationTarget() === 'drawEditor' ? new UtrDrawEditor(page, drawEditorUrl()!) : new UtrEventPage(page, eventUrl()!);
+    if (eventPage instanceof UtrDrawEditor) {
+      await eventPage.open();
+      console.log(`DRAW EDITOR: ${await eventPage.verifyDraw()}`);
+    }
     if (mode === 'live' && !options.all && !options.only) console.log(`LIVE SAFETY GATE: processing ${selected.length} match(es). Confirm in UTR, then re-run with --all.`);
     for (const row of selected) {
       const results: string[] = [];

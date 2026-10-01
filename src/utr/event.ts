@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Page } from 'playwright';
 import { screenshot } from './browser.ts';
 
-export interface UtrConfig { eventUrl?: string; eventId?: string; eventName?: string; section?: string }
+export interface UtrConfig { eventUrl?: string; eventId?: string; eventName?: string; section?: string; target?: 'eventPage' | 'drawEditor' }
 
 export function readUtrConfig(file = process.env.UTR_CONFIG || 'utr.config.json'): UtrConfig {
   const absolute = path.resolve(file);
@@ -37,6 +37,13 @@ export function drawEditorUrl(): string | undefined {
   const id = parsed.pathname.match(/^\/events\/(\d+)/)![1];
   if (!draw) return undefined;
   return `${parsed.origin}/events/${id}/draws?v=drawEditor&d=${encodeURIComponent(draw)}`;
+}
+
+/** Which UI the automation drives: the public event page, or the Event Desk draw editor (default when a draw id is configured). */
+export function automationTarget(config = readUtrConfig()): 'eventPage' | 'drawEditor' {
+  const value = process.env.UTR_TARGET || config.target;
+  if (value === 'eventPage' || value === 'drawEditor') return value;
+  return drawEditorUrl() ? 'drawEditor' : 'eventPage';
 }
 
 /** Optional heading/tab (for example "Playoff") to open before creating matches. */

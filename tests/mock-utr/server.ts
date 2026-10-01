@@ -12,7 +12,12 @@ import process from 'node:process';
 import path from 'node:path';
 
 export interface MockMatch { id: number; round: string; a: string; b: string; score?: { a: number[]; b: number[] } }
-export interface MockState { eventId: number; eventName: string; players: string[]; matches: MockMatch[]; writes: { method: string; path: string }[] }
+export interface EditorSlot { a?: string; b?: string; score?: { a: number[]; b: number[] } }
+export interface MockState {
+  eventId: number; eventName: string; players: string[]; matches: MockMatch[]; writes: { method: string; path: string }[];
+  /** Event Desk draw editor: 8 Round of 16 slots and 4 quarterfinal slots that fill from results. */
+  editor: { r16: EditorSlot[]; qf: EditorSlot[]; published: boolean };
+}
 
 export const EVENT_ID = 388079;
 export const EVENT_NAME = 'UTR Dry Run Junior Open';
@@ -76,6 +81,55 @@ document.querySelectorAll('[data-score]').forEach(button => button.onclick = () 
 </script></body></html>`;
 }
 
+function editorHtml(state: MockState): string {
+  const winner = (slot: EditorSlot): string | undefined => {
+    if (!slot.a || !slot.b || !slot.score) return undefined;
+    const aSets = slot.score.a.filter((x, i) => x > slot.score!.b[i]!).length;
+    return aSets > slot.score.a.length / 2 ? slot.a : slot.b;
+  };
+  const card = (round: string, i: number, slot: EditorSlot) => `
+    <div class="card" data-round="${round}" data-n="${i + 1}">
+      <a href="#" class="dt">Set Date &amp; Time</a><span class="mn">Match #${i + 1}</span>
+      <div class="slots">
+        ${[slot.a, slot.b].map((name, k) => `<div class="slot"><span class="pn">${name ? escapeHtml(name) : '<span class="empty" data-slot="' + k + '">Select a player</span>'}</span>${slot.score && name ? (k === 0 ? slot.score.a : slot.score.b).map(v => `<span class="set">${v}</span>`).join('') : ''}</div>`).join('')}
+        <button type="button" class="scorebtn" data-round="${round}" data-n="${i + 1}">Score</button>
+      </div><div class="more">...</div>
+    </div>`;
+  const qf = state.editor.qf.map((slot, i) => {
+    const feed = (k: number) => winner(state.editor.r16[i * 2 + k]!);
+    return card('qf', i, { ...slot, a: feed(0), b: feed(1) });
+  }).join('');
+  const r16 = state.editor.r16.map((slot, i) => card('r16', i, slot)).join('');
+  return `<!doctype html><html><head><title>${escapeHtml(state.eventName)} | UTR</title>
+<style>.cols{display:flex;gap:40px}.card{border:1px solid #ccc;margin:8px;padding:8px;width:340px}.slot{display:block;margin:4px 0}.set{margin-left:10px}
+.empty{color:#d0107c;cursor:pointer}ul.dd{border:1px solid #333;background:#fff;list-style:none;padding:0;margin:2px;max-height:160px;overflow:auto}ul.dd li{padding:4px;cursor:pointer}
+[role=dialog]{position:fixed;top:60px;left:420px;background:#fff;border:2px solid #333;padding:12px}</style></head>
+<body><header><a data-testid="user-menu" href="/profile/1">My profile</a></header>
+<h1>${escapeHtml(state.eventName)}</h1><div>Single Elimination, Co-ed, Two Sets w/ Match Tiebreaker, 16 Players</div>
+<div><ul><li>Group 01</li><li>Playoff</li></ul></div><span id="saved">Saved</span> <button type="button" id="publish">PUBLISH</button>
+<div class="cols"><section><h2>Round of 16</h2>${r16}</section><section><h2>Quarterfinals</h2>${qf}</section></div>
+<script>
+const call = (method, url, body) => fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(async r => { if (!r.ok) throw new Error(await r.text()); return r.json(); });
+document.getElementById('publish').onclick = () => call('POST', '/api/v1/draw/publish', {}).then(() => location.reload());
+document.querySelectorAll('.empty').forEach(el => el.onclick = async () => {
+  document.querySelectorAll('ul.dd').forEach(x => x.remove());
+  const card = el.closest('.card'); const names = await fetch('/api/v1/players?query=%20%20').then(r => r.json());
+  const list = document.createElement('ul'); list.className = 'dd';
+  names.forEach(p => { const li = document.createElement('li'); li.textContent = p.name + '\\n' + p.rating;
+    li.onclick = () => call('PUT', '/api/v1/draw/' + card.dataset.round + '/' + card.dataset.n + '/slot', { slot: el.dataset.slot, name: p.name }).then(() => location.reload()); list.append(li); });
+  el.after(list);
+});
+document.querySelectorAll('.scorebtn').forEach(button => button.onclick = () => {
+  const d = document.createElement('div'); d.setAttribute('role', 'dialog');
+  let html = '<h2>Score</h2>'; for (let s = 0; s < 3; s++) html += '<div><input type="number"> <input type="number"></div>';
+  d.innerHTML = html + '<button type="button" id="savescore">Save</button>'; document.body.append(d);
+  d.querySelector('#savescore').onclick = () => { const inputs = [...d.querySelectorAll('input')]; const sets = [];
+    for (let s = 0; s < 3; s++) if (inputs[s*2].value !== '' && inputs[s*2+1].value !== '') sets.push({ a: Number(inputs[s*2].value), b: Number(inputs[s*2+1].value) });
+    call('PUT', '/api/v1/draw/' + button.dataset.round + '/' + button.dataset.n + '/score', { sets }).then(() => location.reload()).catch(e => alert(e.message)); };
+});
+</script></body></html>`;
+}
+
 async function readJson(req: http.IncomingMessage): Promise<Record<string, unknown>> {
   let body = '';
   for await (const chunk of req) body += chunk;
@@ -83,7 +137,7 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
 }
 
 export async function startMockUtr(port = 0): Promise<{ origin: string; eventUrl: string; state: MockState; close(): Promise<void> }> {
-  const state: MockState = { eventId: EVENT_ID, eventName: EVENT_NAME, players: PLAYERS, matches: [], writes: [] };
+  const state: MockState = { eventId: EVENT_ID, eventName: EVENT_NAME, players: PLAYERS, matches: [], writes: [], editor: { r16: Array.from({ length: 8 }, () => ({})), qf: Array.from({ length: 4 }, () => ({})), published: false } };
   let nextId = 9001;
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -94,13 +148,31 @@ export async function startMockUtr(port = 0): Promise<{ origin: string; eventUrl
     try {
       if (req.method !== 'GET') state.writes.push({ method: req.method!, path: url.pathname });
       if (req.method === 'GET' && url.pathname === `/events/${EVENT_ID}`) return send(200, eventHtml(state), 'text/html');
+      if (req.method === 'GET' && url.pathname === `/events/${EVENT_ID}/draws`) return send(200, editorHtml(state), 'text/html');
+      if (req.method === 'POST' && url.pathname === '/api/v1/draw/publish') { state.editor.published = true; return send(200, { ok: true }); }
+      const slotRoute = url.pathname.match(/^\/api\/v1\/draw\/(r16|qf)\/(\d+)\/(slot|score)$/);
+      if (req.method === 'PUT' && slotRoute) {
+        const slots = state.editor[slotRoute[1] as 'r16' | 'qf'], slot = slots[Number(slotRoute[2]) - 1];
+        const body = await readJson(req);
+        if (!slot) return send(404, { error: 'unknown match' });
+        if (slotRoute[3] === 'slot') {
+          const key = String(body.slot) === '0' ? 'a' : 'b';
+          if (!state.players.includes(String(body.name))) return send(400, { error: 'unknown player' });
+          if (Object.values(state.editor.r16).some(m => m.a === body.name || m.b === body.name)) return send(409, { error: 'player already placed' });
+          slot[key] = String(body.name); return send(200, { ok: true });
+        }
+        const sets = (body.sets ?? []) as { a: number; b: number }[];
+        if (!slot.a || !slot.b) return send(409, { error: 'players not set' });
+        if (!sets.length || sets.some(x => x.a === x.b)) return send(400, { error: 'invalid score' });
+        slot.score = { a: sets.map(x => x.a), b: sets.map(x => x.b) }; return send(200, { ok: true });
+      }
       if (req.method === 'GET' && (url.pathname === '/' || url.pathname.startsWith('/profile'))) {
         return send(200, '<!doctype html><title>UTR</title><a data-testid="user-menu" href="/profile/1">My profile</a><main>Home</main>', 'text/html');
       }
       if (req.method === 'GET' && url.pathname === '/api/v1/players') {
         const query = (url.searchParams.get('query') ?? '').toLowerCase();
         return send(200, state.players.map((name, id) => ({ id: String(id), name, rating: (7 + (id % 5) / 2).toFixed(2) }))
-          .filter(p => query.length >= 2 && p.name.toLowerCase().includes(query)));
+          .filter(p => query.trim() === '' || (query.length >= 2 && p.name.toLowerCase().includes(query))));
       }
       if (req.method === 'POST' && url.pathname === `/api/v1/event/${EVENT_ID}/matches`) {
         const body = await readJson(req);
