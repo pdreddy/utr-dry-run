@@ -68,6 +68,10 @@ export async function openAndVerifyEvent(page: Page, live: boolean): Promise<{ v
   const expected = (process.env.UTR_EVENT_NAME || readUtrConfig().eventName)?.trim();
   const verified = Boolean(expected && name.toLocaleLowerCase().includes(expected.toLocaleLowerCase()));
   await screenshot(page, 'event-discovery');
-  if (live && !verified) throw new Error('Live mode requires UTR_EVENT_NAME to exactly identify the target event page');
+  if (live && !verified) {
+    throw new Error(expected
+      ? `Live mode stopped: UTR_EVENT_NAME is "${expected}" but this page's title is "${name}". Fix UTR_EVENT_NAME in .env.`
+      : `Live mode requires UTR_EVENT_NAME. This page's title is "${name}"; add a line UTR_EVENT_NAME=<that title> to .env.`);
+  }
   return { verified, name };
 }

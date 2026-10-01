@@ -21,10 +21,16 @@ type Operation = 'create'|'scores'|'sync';
 
 function loadDotEnv(): void {
   if (!fs.existsSync('.env')) return;
+  // A key repeated in the file (a blank template line, then the real value added below
+  // it) takes its last non-empty value; variables already set in the shell still win.
+  const values = new Map<string, string>();
   for (const line of fs.readFileSync('.env', 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/i);
-    if (match && process.env[match[1]!] === undefined) process.env[match[1]!] = match[2]!.replace(/^(['"])(.*)\1$/, '$2');
+    const match = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*?)\s*$/i);
+    if (!match) continue;
+    const value = match[2]!.replace(/^(['"])(.*)\1$/, '$2');
+    if (value || !values.has(match[1]!)) values.set(match[1]!, value);
   }
+  for (const [key, value] of values) if (process.env[key] === undefined) process.env[key] = value;
 }
 loadDotEnv();
 

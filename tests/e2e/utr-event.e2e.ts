@@ -156,7 +156,7 @@ describe('UTR automation, one full event against the mock', { timeout: 900_000 }
     const before = writes();
     const { code, out } = await cli(['create', csv, '--live', '--all'], { UTR_EVENT_NAME: 'Some Other Open' });
     assert.equal(code, 1, out);
-    assert.match(out, /Live mode requires UTR_EVENT_NAME/);
+    assert.match(out, /Live mode stopped: UTR_EVENT_NAME is "Some Other Open"/);
     assert.equal(writes(), before);
   });
 });
