@@ -45,6 +45,8 @@ export class UtrDrawEditor {
    */
   async ensureDraw(name = process.env.UTR_DRAW_NAME || 'Playoff'): Promise<void> {
     const onBracket = () => this.page.getByText(/^Round of 16/).first().isVisible().catch(() => false);
+    // The editor renders its bracket after the page loads; give the configured draw a chance to appear first.
+    await this.page.getByText(/^Round of 16/).first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
     if (await onBracket()) return;
     const candidates = this.page.getByText(name, { exact: true });
     const found: { item: Locator; x: number }[] = [];
