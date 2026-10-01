@@ -22,10 +22,21 @@ export function eventUrl(config = readUtrConfig()): string | undefined {
   // local mock (tests/mock-utr); it can never reach a real event.
   const utr = url.protocol === 'https:' && url.hostname === 'app.utrsports.net';
   const loopback = url.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(url.hostname);
-  if (!(utr || loopback) || !/^\/events\/\d+\/?$/.test(url.pathname)) {
+  if (!(utr || loopback) || !/^\/events\/\d+(\/draws)?\/?$/.test(url.pathname)) {
     throw new Error('UTR event URL must be an https://app.utrsports.net/events/<numeric-id> URL');
   }
   return url.toString();
+}
+
+/** Event Desk draw editor for the configured draw (same event id and `d=` draw id as the event URL). */
+export function drawEditorUrl(): string | undefined {
+  const url = eventUrl();
+  if (!url) return undefined;
+  const parsed = new URL(url);
+  const draw = parsed.searchParams.get('d');
+  const id = parsed.pathname.match(/^\/events\/(\d+)/)![1];
+  if (!draw) return undefined;
+  return `${parsed.origin}/events/${id}/draws?v=drawEditor&d=${encodeURIComponent(draw)}`;
 }
 
 /** Optional heading/tab (for example "Playoff") to open before creating matches. */

@@ -6,7 +6,7 @@ import { namesEqual } from '../src/utils/names.ts';
 import type { MatchRow } from '../src/models/match.ts';
 import { shouldRunHeadless, validatedCdpUrl } from '../src/utr/browser.ts';
 import { loginTimeout } from '../src/utr/login.ts';
-import { eventUrl } from '../src/utr/event.ts';
+import { drawEditorUrl, eventUrl } from '../src/utr/event.ts';
 import { lineNamesPlayer, renderedScoreMatches, roundLabels, scoreFieldValues } from '../src/utr/eventPage.ts';
 import { endpointTemplate, extractId, shapeOf } from '../src/utr/network.ts';
 import { selectRows } from '../src/cli.ts';
@@ -104,5 +104,14 @@ describe('CSV and bracket automation', () => {
     assert.deepEqual(selectRows(rows, 'create', 'live', { only: 'R2' }).map(r => r.match_id), ['R2']);
     assert.equal(selectRows(rows, 'create', 'live', { all: true }).length, 2);
     assert.throws(() => selectRows(rows, 'create', 'live', { only: 'QF1' }), /not an eligible/);
+  });
+  it('derives the Event Desk draw editor URL from the event URL and accepts the /draws path', () => {
+    const old = process.env.UTR_EVENT_URL;
+    process.env.UTR_EVENT_URL = 'https://app.utrsports.net/events/388079?d=d08a5733-d994&r=0&t=4';
+    try {
+      assert.equal(drawEditorUrl(), 'https://app.utrsports.net/events/388079/draws?v=drawEditor&d=d08a5733-d994');
+      process.env.UTR_EVENT_URL = 'https://app.utrsports.net/events/388079/draws?v=drawEditor&d=x';
+      assert.equal(eventUrl(), 'https://app.utrsports.net/events/388079/draws?v=drawEditor&d=x');
+    } finally { if (old === undefined) delete process.env.UTR_EVENT_URL; else process.env.UTR_EVENT_URL = old; }
   });
 });

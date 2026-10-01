@@ -8,11 +8,11 @@ import type { MatchRow } from './models/match.ts';
 import { Logger } from './utils/logger.ts';
 import { openSession } from './utr/browser.ts';
 import { ensureAuthenticated } from './utr/login.ts';
-import { eventUrl, openAndVerifyEvent, siteOrigin } from './utr/event.ts';
+import { drawEditorUrl, eventUrl, openAndVerifyEvent, siteOrigin } from './utr/event.ts';
 import { discoverControls } from './utr/discovery.ts';
 import { UtrEventPage } from './utr/eventPage.ts';
 import { recordApiCalls } from './utr/network.ts';
-import { inspectAdminMenus, inspectPage } from './utr/inspect.ts';
+import { inspectAdminMenus, inspectDrawEditor, inspectPage } from './utr/inspect.ts';
 import readline from 'node:readline/promises';
 
 type ModeOptions = { dryRun?: boolean; browserDryRun?: boolean; live?: boolean; all?: boolean; keepOpen?: boolean; only?: string };
@@ -169,7 +169,14 @@ async function inspect(options: ModeOptions): Promise<void> {
     console.log(`UTR EVENT: ${event.name}`);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     console.log(`SAVED: ${await inspectAdminMenus(page)}  (opened the Actions / Edit / Manage menus; nothing was clicked inside them)`);
-    const steps = ['playoff', 'event-desk', 'event-desk-match', 'divisions'];
+    const editor = drawEditorUrl();
+    if (editor) {
+      console.log('Opening the Event Desk draw editor (opens a player dropdown and a Score dialog, then Escape; nothing is selected or saved)...');
+      try { for (const file of await inspectDrawEditor(page, editor)) console.log(`SAVED: ${file}`); }
+      catch (error) { console.error(`draw editor inspection failed: ${(error as Error).message}`); }
+    }
+    console.log('\nAutomatic capture finished. Everything needed is in logs/utr-inspect-*.json. Press Ctrl+C to close, or continue for optional extra views.');
+    const steps = ['divisions'];
     const prompts: Record<string, string> = {
       playoff: 'Show MATCHUPS > Playoff > Round of 16 (the TBD bracket)',
       'event-desk': 'Open Manage > Event Desk (or wherever you assign players / enter scores) and show the Playoff matches there',

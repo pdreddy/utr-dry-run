@@ -38,6 +38,15 @@ export async function inspectPage(page: Page, name: string, dir = process.env.UT
       matchCards: [...document.querySelectorAll('[class*="matchCard" i], [data-testid*=".match-" i]')]
         .filter(el => !el.parentElement?.closest('[class*="matchCard" i]'))
         .slice(0, 4).map(el => ({ ...describe(el), html: el.outerHTML.replace(/\s+/g, ' ').slice(0, 3500) })),
+      playerSlots: [...document.querySelectorAll('*')].filter(el => el.children.length === 0 && /^Select a player$/i.test((el.textContent ?? '').trim()))
+        .slice(0, 2).map(el => ({ ...describe(el), parentHtml: (el.parentElement?.parentElement ?? el).outerHTML.replace(/\s+/g, ' ').slice(0, 1500) })),
+      matchHeaders: [...document.querySelectorAll('*')].filter(el => el.children.length === 0 && /^Match #\d+/.test((el.textContent ?? '').trim()))
+        .slice(0, 3).map(el => ({ ...describe(el), cardHtml: (el.parentElement?.parentElement?.parentElement ?? el).outerHTML.replace(/\s+/g, ' ').slice(0, 2500) })),
+      scoreButtons: [...document.querySelectorAll('button')].filter(el => /^Score$/i.test((el.textContent ?? '').trim())).slice(0, 3)
+        .map(el => ({ ...describe(el), disabled: el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true', html: el.outerHTML.slice(0, 600) })),
+      popups: [...document.querySelectorAll('[role="listbox"], [role="menu"], [role="option"], [class*="dropdown" i], [class*="popover" i], [class*="select" i][class*="menu" i], [class*="modal" i][class*="show" i], [role="dialog"]')]
+        .filter(el => (el as HTMLElement).offsetParent !== null && !noise(el)).slice(0, 8)
+        .map(el => ({ ...describe(el), html: el.outerHTML.replace(/\s+/g, ' ').slice(0, 3000) })),
       adminBar: [...document.querySelectorAll('[data-testid^="event-profile.admin-bar"]')].map(describe),
       matchCardCandidates: cards.map(el => ({ ...describe(el), html: el.outerHTML.replace(/\s+/g, ' ').slice(0, 1500) }))
     };
@@ -73,4 +82,29 @@ export async function inspectAdminMenus(page: Page, dir = process.env.UTR_LOG_DI
   const file = path.join(dir, 'utr-inspect-admin-menus.json');
   fs.writeFileSync(file, JSON.stringify({ url: page.url(), menus }, null, 2));
   return file;
+}
+
+/** Opens (never fills or saves) the first player dropdown and first Score dialog in the draw editor, recording each. */
+export async function inspectDrawEditor(page: Page, editorUrl: string): Promise<string[]> {
+  const saved: string[] = [];
+  await page.goto(editorUrl, { waitUntil: 'domcontentloaded', timeout: 45_000 });
+  await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => undefined);
+  await page.waitForTimeout(1_500);
+  saved.push(await inspectPage(page, 'draw-editor'));
+  const slot = page.getByText('Select a player', { exact: true }).first();
+  if (await slot.isVisible().catch(() => false)) {
+    await slot.click({ timeout: 3_000 }).catch(() => undefined);
+    await page.waitForTimeout(800);
+    saved.push(await inspectPage(page, 'player-dropdown'));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+  }
+  const score = page.getByRole('button', { name: 'Score', exact: true }).first();
+  if (await score.isVisible().catch(() => false)) {
+    await score.click({ timeout: 3_000 }).catch(() => undefined);
+    await page.waitForTimeout(800);
+    saved.push(await inspectPage(page, 'score-dialog'));
+    await page.keyboard.press('Escape');
+  }
+  return saved;
 }
