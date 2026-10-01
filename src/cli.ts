@@ -168,12 +168,13 @@ async function inspect(options: ModeOptions): Promise<void> {
     const event = await openAndVerifyEvent(page, false);
     console.log(`UTR EVENT: ${event.name}`);
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const steps = ['matchups', 'playoff', 'match-menu', 'dialog'];
+    const steps = ['playoff', 'tbd-card', 'match-menu', 'divisions', 'dialog'];
     const prompts: Record<string, string> = {
-      matchups: 'Go to MATCHUPS and show a round with matches',
-      playoff: 'Switch to the PLAYOFF section (open the Group/Division dropdown to its playoff option)',
-      'match-menu': 'Click the three-dot menu on one playoff match so its options are showing',
-      dialog: 'Open the add-match / enter-score screen if there is one (do NOT save anything)'
+      playoff: 'Show MATCHUPS > Playoff > Round of 16 (the TBD bracket)',
+      'tbd-card': 'Click or hover a TBD match card (or its edit/⋮ control) so anything that lets you assign players shows',
+      'match-menu': 'Open any menu/options available on a match card, if there is one',
+      divisions: 'Open the DIVISIONS tab and the Playoff draw there (look for Edit draw / Manage / Assign players)',
+      dialog: 'Open the screen where you pick a player for a slot or enter a score (do NOT save anything)'
     };
     for (const step of steps) {
       const answer = await rl.question(`\n${prompts[step]}, then press Enter here (type "skip" to skip this step, "done" to finish)... `);
