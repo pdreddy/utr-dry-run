@@ -104,18 +104,28 @@ export class UtrDrawEditor {
     if (await filter.count().catch(() => 0)) {
       await filter.fill('').catch(() => undefined);
       await filter.fill(name.split(' ')[0] ?? name).catch(() => undefined);
-      await this.page.waitForTimeout(600);
     }
-    const candidates = this.page.getByText(name, { exact: false });
-    const found: { row: Locator; text: string }[] = [];
-    for (let i = 0; i < Math.min(await candidates.count(), 25); i++) {
-      const row = candidates.nth(i);
-      if (!await row.isVisible().catch(() => false)) continue; // skips the other, currently hidden, draws on this page
-      const text = ((await row.innerText().catch(() => '')) || '').trim();
-      const firstLine = text.split('\n')[0] ?? text;
-      // A roster row is short (name + rating + city, a few lines); a wrapping container
-      // repeats the same text at greater length, so length bounds out the container.
-      if (lineNamesPlayer(firstLine, name) && text.length < 120) found.push({ row, text });
+    const collect = async () => {
+      const candidates = this.page.getByText(name, { exact: false });
+      const matches: { row: Locator; text: string }[] = [];
+      for (let i = 0; i < Math.min(await candidates.count(), 25); i++) {
+        const row = candidates.nth(i);
+        if (!await row.isVisible().catch(() => false)) continue; // skips the other, currently hidden, draws on this page
+        const text = ((await row.innerText().catch(() => '')) || '').trim();
+        const firstLine = text.split('\n')[0] ?? text;
+        // A roster row is short (name + rating + city, a few lines); a wrapping container
+        // repeats the same text at greater length, so length bounds out the container.
+        if (lineNamesPlayer(firstLine, name) && text.length < 120) matches.push({ row, text });
+      }
+      return matches;
+    };
+    // The real site's filter list re-renders after a network round trip, unlike the local
+    // mock; poll instead of a single fixed wait so this does not race ahead of it.
+    let found = await collect();
+    const deadline = Date.now() + 5_000;
+    while (!found.length && Date.now() < deadline) {
+      await this.page.waitForTimeout(300);
+      found = await collect();
     }
     if (!found.length) return { status: 'missing' };
     // A row's own name element and its wrapping row both match (the wrapper's text is
@@ -144,16 +154,24 @@ export class UtrDrawEditor {
       const trigger = row.locator('xpath=ancestor::*[self::li or self::div][1]').locator('button, [role="button"]').last();
       if (!await trigger.count().catch(() => 0)) { results[name] = 'NEEDS_REVIEW: no row menu found'; continue; }
       await this.safeClick(trigger);
-      await this.page.waitForTimeout(400);
       const addItem = this.page.getByText('Add to Draw', { exact: true }).first();
+      await addItem.waitFor({ state: 'visible', timeout: 3_000 }).catch(() => undefined);
       if (!await addItem.isVisible().catch(() => false)) {
         await this.page.keyboard.press('Escape');
         results[name] = 'NEEDS_REVIEW: "Add to Draw" menu item not found';
         continue;
       }
       await this.safeClick(addItem);
-      await this.page.waitForTimeout(600);
-      results[name] = 'added';
+      // The real site adds the player over the network; poll for the row to leave this
+      // list instead of trusting a fixed wait to outlast that round trip.
+      const deadline = Date.now() + 5_000;
+      let stillListed: 'exact'|'ambiguous'|'missing' = 'exact';
+      while (Date.now() < deadline) {
+        stillListed = (await this.searchRoster(name)).status;
+        if (stillListed === 'missing') break;
+        await this.page.waitForTimeout(300);
+      }
+      results[name] = stillListed === 'missing' ? 'added' : 'NEEDS_REVIEW: still listed in "Players not in draw" after Add to Draw';
     }
     await screenshot(this.page, 'draw-roster-after-add');
     return results;
@@ -250,11 +268,15 @@ export class UtrDrawEditor {
     if (!input) return { texts: [], items: [] };
     await input.fill('').catch(() => undefined);
     await input.pressSequentially(query, { delay: 40 }).catch(() => input.fill(query));
-    await this.page.waitForTimeout(700);
     // Prefer specific row roles; only fall back to generic class matching if none are found,
     // since a class-based selector can also match the results panel that wraps the rows,
     // double-counting every row once as itself and once as part of that wrapper's text.
     const specific = this.page.locator('li:visible, [role="option"]:visible, [role="menuitem"]:visible');
+    // The real site's results re-render after a network round trip, unlike the local mock;
+    // poll instead of a single fixed wait so this does not race ahead of it.
+    const deadline = Date.now() + 5_000;
+    while (await specific.count() === 0 && Date.now() < deadline) await this.page.waitForTimeout(300);
+    await this.page.waitForTimeout(300); // let a just-appeared list finish rendering all its rows
     const rows = await specific.count() ? specific : this.page.locator('[class*="option" i]:visible, [class*="result" i]:visible');
     const total = Math.min(await rows.count(), 50);
     const items: Locator[] = [], texts: string[] = [];
