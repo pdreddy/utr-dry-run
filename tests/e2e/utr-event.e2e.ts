@@ -81,7 +81,7 @@ describe('UTR automation, one full event against the mock', { timeout: 900_000 }
     assert.equal(code, 0, out);
     assert.match(out, /EVENT VERIFIED: YES/);
     assert.match(out, /SUMMARY \(browser\): NOT_SUBMITTED=8$/m);
-    assert.match(out, /R16-1 Pranav V vs Ridit Sarkar: NOT_SUBMITTED\n {2}PLAYER A MATCHED: exact/);
+    assert.match(out, /R16-1 Pranav Vommi vs Ridit Sarkar: NOT_SUBMITTED\n {2}PLAYER A MATCHED: exact/);
     assert.equal(writes(), 0);
     assert.ok(fs.existsSync(path.join(work, 'screenshots', 'R16-1-before-submit.png')));
   });
@@ -90,7 +90,7 @@ describe('UTR automation, one full event against the mock', { timeout: 900_000 }
     const { code, out } = await cli(['create', csv, '--live']);
     assert.equal(code, 0, out);
     assert.match(out, /LIVE SAFETY GATE/);
-    assert.deepEqual(mock.state.matches.map(m => [m.a, m.b, m.round]), [['Pranav V', 'Ridit Sarkar', 'Round of 16']]);
+    assert.deepEqual(mock.state.matches.map(m => [m.a, m.b, m.round]), [['Pranav Vommi', 'Ridit Sarkar', 'Round of 16']]);
     assert.equal(readMatches(csv)[0]!.utr_match_id, String(mock.state.matches[0]!.id));
   });
 

@@ -28,7 +28,7 @@ Usage: ./run.sh <command> [extra args]
 
   setup            Install dependencies and the Chromium browser (run once)
   check            Validate matches.csv and print the plan (no browser)
-  login            Open the browser so YOU can log in to UTR (credentials are never typed into this tool)
+  login            Open only the UTR sign-in flow; enter credentials in UTR's browser form
   dry-run          Browser dry run for creating matches: fills forms, submits nothing, keeps window open
   create-one       LIVE: create exactly one match (default R16-1, or: ./run.sh create-one R16-2)
   create-all       LIVE: create every ready match (run only after create-one looked right in UTR)
@@ -51,7 +51,12 @@ case "$cmd" in
   setup)  npm install && npx playwright install chromium; need_env ;;
   check)  utr validate "$CSV" && utr plan "$CSV" ;;
   reset-browser)   free_profile; echo "Done." ;;
-  login|dry-run)
+  login)
+          need_env; free_profile
+          echo "A browser window will open at UTR. Enter your credentials in UTR's own form (including any MFA)."
+          echo "This command waits for confirmed sign-in and saves the session; it will not start draw automation."
+          UTR_HEADLESS=false utr login "$@" ;;
+  dry-run)
           need_env; free_profile
           echo "A browser window will open. Log in to UTR yourself (including any MFA), then leave it open."
           UTR_HEADLESS=false utr create "$CSV" --browser-dry-run --keep-open "$@" ;;

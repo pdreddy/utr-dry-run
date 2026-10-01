@@ -171,6 +171,13 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
   if (totals.NEEDS_REVIEW) process.exitCode = 2;
 }
 
+/** Opens only the authentication flow and persists UTR's session in the browser profile. */
+async function login(): Promise<void> {
+  await withBrowser({}, async () => {
+    console.log('LOGIN SAVED: UTR authenticated this browser profile. You can now run ./run.sh dry-run.');
+  });
+}
+
 /** Records the UTR web app's own API calls while the account owner performs one create and one score by hand. */
 async function capture(options: ModeOptions): Promise<void> {
   await withBrowser({ ...options, keepOpen: false }, async page => {
@@ -220,9 +227,10 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const command = args[0];
   const file = args[1] && !args[1].startsWith('--') ? args[1] : 'matches.csv';
-  if (!command || !['validate', 'plan', 'create', 'scores', 'sync', 'capture', 'inspect'].includes(command)) {
-    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync|capture|inspect> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all|--only <match_id>] [--keep-open]');
+  if (!command || !['login', 'validate', 'plan', 'create', 'scores', 'sync', 'capture', 'inspect'].includes(command)) {
+    throw new Error('Usage: npm run utr -- <login|validate|plan|create|scores|sync|capture|inspect> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all|--only <match_id>] [--keep-open]');
   }
+  if (command === 'login') { await login(); return; }
   if (command === 'validate') { console.log(`VALID: ${load(file).rows.length} matches`); return; }
   if (command === 'plan') { printPlan(load(file).rows); return; }
   const options: ModeOptions = {
