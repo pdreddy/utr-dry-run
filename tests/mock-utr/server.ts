@@ -29,7 +29,7 @@ const PLAYERS = [
   'Pranav V', 'Pranav Vijay', 'Ridit Sarkar', 'Iraj Kotru', 'Rithva Kanakaraj', 'Pritish Singhal', 'Aarohi Mara',
   'Venkata Aarush Tellabati', 'Vansh Sambara', 'Prajwal Aripaka', 'Venkata Ram Dheeraj Nagulakonda',
   'Ranveer Kalavakolanu', 'Saatvik Mishra', 'Harsha Vennapusa', 'Dhruvin Saladi', 'Sai Mukunth Kuppan',
-  'Viswesh Vasu', 'Aarav Shah', 'Aarav Shah'
+  'Viswesh Vasu', 'Aarav Shah', 'Aarav Shah', 'Pranav Vommi', 'Sai Mukunth Kuppan Saravanan'
 ];
 const ROUNDS = ['Round of 16', 'Quarterfinals', 'Semifinals', 'Final'];
 
@@ -158,7 +158,7 @@ function bindRoster() {
     document.querySelectorAll('.rowmenu').forEach(x => x.remove());
     const menu = document.createElement('div'); menu.className = 'rowmenu';
     menu.innerHTML = '<div class="mi" role="menuitem">Add to Draw</div><div class="mi" role="menuitem">View Profile</div>';
-    menu.querySelector('.mi').onclick = () => call('POST', '/api/v1/draw/roster', { index: Number(button.dataset.index) }).then(() => { refreshRoster(); refresh(); });
+    menu.querySelector('.mi').onclick = () => call('POST', '/api/v1/draw/roster', { index: Number(button.dataset.index) }).then(() => { notInDrawOpen = false; refreshRoster(); refresh(); }); // the sidebar re-renders collapsed
     button.after(menu);
   });
 }

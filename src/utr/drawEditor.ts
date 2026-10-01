@@ -104,24 +104,18 @@ export class UtrDrawEditor {
     console.log(`DRAW SELECT: clicked "${name}" but the Round of 16 bracket did not appear`);
   }
 
-  /** Set once a player row has been seen under "Players not in draw", proving the section is open. */
-  private rosterOpenConfirmed = false;
-
   /** The sidebar's "PLAYERS NOT IN DRAW (n)" section header (a collapsible bar). */
   private rosterHeader(): Locator {
     return this.page.getByText(/^players not in draw/i).first();
   }
 
-  /** Opens "Players not in draw" when it reports itself collapsed; a no-op when it does not say. */
+  /** Opens "Players not in draw" if it shows no rows. */
   private async openRosterSection(): Promise<void> {
     const header = this.rosterHeader();
-    if (!await header.isVisible().catch(() => false)) return;
-    const state = header.locator('xpath=ancestor-or-self::*[@aria-expanded][1]');
-    if (await state.count().catch(() => 0) && await state.getAttribute('aria-expanded').catch(() => null) === 'false') {
-      console.log('ROSTER: expanding "Players not in draw"');
-      await this.safeClick(header);
-      await this.page.waitForTimeout(800);
-    }
+    if (!await header.isVisible().catch(() => false) || await this.sectionShowsRows()) return;
+    console.log('ROSTER: expanding "Players not in draw"');
+    await this.safeClick(header);
+    await this.page.waitForTimeout(800);
   }
 
   /**
@@ -167,20 +161,16 @@ export class UtrDrawEditor {
       }
       return found;
     };
-    let found = await poll(this.rosterOpenConfirmed ? patience : Math.min(patience, 2_500));
-    if (!found.length && !this.rosterOpenConfirmed && await this.rosterHeader().isVisible().catch(() => false)) {
-      if (await this.sectionShowsRows()) this.rosterOpenConfirmed = true; // open; this player just is not listed
-      else {
-        console.log('ROSTER: expanding "Players not in draw"');
-        await this.safeClick(this.rosterHeader());
-        await this.page.waitForTimeout(600);
-        found = await poll(5_000);
-        if (found.length || await this.sectionShowsRows()) this.rosterOpenConfirmed = true;
-        else await this.safeClick(this.rosterHeader()); // it did not open anything: put it back
-      }
+    let found = await poll(patience);
+    // Not found: only if the section shows nothing at all is it collapsed (it can close
+    // again after an add re-renders the sidebar). Never click it while it shows rows.
+    if (!found.length && patience > 0 && await this.rosterHeader().isVisible().catch(() => false) && !await this.sectionShowsRows()) {
+      console.log('ROSTER: expanding "Players not in draw"');
+      await this.safeClick(this.rosterHeader());
+      await this.page.waitForTimeout(800);
+      found = await poll(patience);
     }
     if (!found.length) return { status: 'missing' };
-    this.rosterOpenConfirmed = true;
     // A row's own name element and its wrapping row both match (the wrapper's text is
     // the name plus its trailing icon/rating/city text); keep only the shortest match(es).
     const minLen = Math.min(...found.map(f => f.text.length));
@@ -189,22 +179,25 @@ export class UtrDrawEditor {
   }
 
   /**
-   * Whether any row shows inside "Players not in draw" (below its header, in the sidebar's
-   * column), with the filter briefly cleared so an already-added name does not hide them all.
+   * Whether "Players not in draw" is showing its rows. It is the sidebar's last section,
+   * so its rows are the only text after its header inside the sidebar: when collapsed,
+   * nothing follows the header. The filter is cleared for the check so a search that
+   * matched nobody does not look like a collapsed section.
    */
   private async sectionShowsRows(): Promise<boolean> {
-    const headerBox = await this.rosterHeader().boundingBox().catch(() => null);
-    if (!headerBox) return false;
+    const header = this.rosterHeader();
+    if (!await header.isVisible().catch(() => false)) return false;
     const filter = this.page.getByPlaceholder(/filter players/i).first();
     const previous = await filter.inputValue().catch(() => '');
-    if (previous) { await filter.fill('').catch(() => undefined); await this.page.waitForTimeout(800); }
-    const rows = this.page.locator('li:visible, [role="row"]:visible, [role="listitem"]:visible, input[type="checkbox"]:visible, [role="checkbox"]:visible');
-    let shown = false;
-    for (let i = 0; i < Math.min(await rows.count().catch(() => 0), 80) && !shown; i++) {
-      shown = inRosterSection(await rows.nth(i).boundingBox().catch(() => null), headerBox);
-    }
+    if (previous) { await filter.fill('').catch(() => undefined); await this.page.waitForTimeout(1_000); }
+    // Smallest ancestor holding the header and at least one other section header.
+    const lower = 'translate(normalize-space(text()), "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")';
+    const sidebar = header.locator(`xpath=ancestor::*[.//*[starts-with(${lower}, "placed") or starts-with(${lower}, "waitlist")]][1]`);
+    const text = ((await sidebar.innerText().catch(() => '')) || '');
+    const at = text.search(/players not in draw[^\n]*/i);
+    const after = at < 0 ? '' : text.slice(at).replace(/^players not in draw[^\n]*/i, '').trim();
     if (previous) { await filter.fill(previous).catch(() => undefined); await this.page.waitForTimeout(300); }
-    return shown;
+    return after.length > 0;
   }
 
   /**

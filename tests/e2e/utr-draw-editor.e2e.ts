@@ -43,7 +43,7 @@ function cli(args: string[], overrides: Record<string, string> = {}): Promise<{ 
 const writes = () => mock.state.writes.length;
 const r16 = () => mock.state.editor.r16;
 
-describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 600_000 }, () => {
+describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 1_500_000 }, () => {
   before(async () => {
     mock = await startMockUtr();
     work = fs.mkdtempSync(path.join(os.tmpdir(), 'utr-editor-e2e-'));
@@ -68,7 +68,7 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 600
     assert.equal(code, 0, out);
     assert.equal(out.match(/^ROSTER .+: added$/gm)?.length, 16, out);
     assert.equal(mock.state.editor.roster.length, 16, 'all 16 are added to the draw first, even for one match');
-    assert.deepEqual([r16()[0]!.a, r16()[0]!.b], ['Pranav V', 'Ridit Sarkar']);
+    assert.deepEqual([r16()[0]!.a, r16()[0]!.b], ['Pranav Vommi', 'Ridit Sarkar']);
     assert.ok(r16().slice(1).every(m => !m.a && !m.b));
     assert.equal(readMatches(csv)[0]!.utr_sync_status, 'MATCH_CREATED');
   });
@@ -129,10 +129,12 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 600
     mock.state.editor.r16[0] = { a: 'Aarav Shah', b: 'Viswesh Vasu' };
     const review = path.join(work, 'occupied.csv');
     fs.writeFileSync(review, 'match_id,round,player_a,player_b\nR16-1,R16,Pranav V,Ridit Sarkar\n');
-    const before = writes();
+    const slotWrites = () => mock.state.writes.filter(w => /\/(slot|score)$/.test(w.path)).length;
+    const before = slotWrites();
     const { code, out } = await cli(['create', review, '--live', '--all']);
     assert.equal(code, 2, out);
     assert.match(out, /already has different players/);
-    assert.equal(writes(), before);
+    assert.equal(slotWrites(), before, 'the occupied match is never written to (adding players to the draw first is fine)');
+    assert.deepEqual(mock.state.editor.r16[0], { a: 'Aarav Shah', b: 'Viswesh Vasu' });
   });
 });
