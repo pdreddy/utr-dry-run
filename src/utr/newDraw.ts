@@ -71,7 +71,10 @@ async function addDrawButton(page: Page): Promise<Locator | undefined> {
       const el = icons.nth(j);
       const c = await el.boundingBox().catch(() => null);
       if (!c || c.width > 60 || c.height > 60) continue; // an icon, not a whole bar
-      if (c.x < box.x + box.width || c.x > box.x + 400 || Math.abs(c.y + c.height / 2 - midY) > 18) continue;
+      // The header element can span the whole bar (word and icon share it), so only require
+      // the icon to start right of where the word starts, and not be the header itself.
+      if (c.x < box.x + 30 || c.x > box.x + 450 || Math.abs(c.y + c.height / 2 - midY) > 18) continue;
+      if (await el.evaluate((node, text) => (node.textContent ?? '').trim().toLowerCase() === text, 'draws').catch(() => false)) continue;
       const named = /add|create|new|plus/i.test(`${await el.getAttribute('aria-label').catch(() => '')} ${await el.getAttribute('title').catch(() => '')} ${await el.getAttribute('class').catch(() => '')}`);
       const score = (named ? 1000 : 0) + c.x; // labelled first, then the rightmost
       if (!best || score > best.score) best = { el, score };
@@ -79,6 +82,23 @@ async function addDrawButton(page: Page): Promise<Locator | undefined> {
     if (best) return best.el;
   }
   return undefined;
+}
+
+/** What is on the DRAWS header bar (tag, class, label, box), for fixing the "+" lookup from a real run. */
+async function describeDrawsBar(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const header = [...document.querySelectorAll('body *')].find(el => el.children.length === 0 && /^\s*draws\s*$/i.test(el.textContent ?? '') && (el as HTMLElement).offsetParent !== null && el.getBoundingClientRect().x > 30);
+    if (!header) return 'no DRAWS header found';
+    const h = header.getBoundingClientRect();
+    const mid = h.y + h.height / 2;
+    return [...document.querySelectorAll('body *')].filter(el => {
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.width < 80 && Math.abs(r.y + r.height / 2 - mid) < 20 && r.x > h.x && r.x < h.x + 450;
+    }).slice(0, 15).map(el => {
+      const r = el.getBoundingClientRect();
+      return `<${el.tagName.toLowerCase()} class="${(el.getAttribute('class') ?? '').slice(0, 60)}" aria="${el.getAttribute('aria-label') ?? ''}" cursor=${getComputedStyle(el).cursor} x=${Math.round(r.x)} w=${Math.round(r.width)}>`;
+    }).join(' ') || `nothing small found beside the header (header at x=${Math.round(h.x)}, w=${Math.round(h.width)})`;
+  }).catch(error => `could not inspect: ${(error as Error).message}`);
 }
 
 /** The control a field label belongs to: its own input, or the nearest ancestor holding one. */
@@ -152,7 +172,7 @@ export async function createDraw(page: Page, editorUrl: string, config: NewDrawC
     return `NEEDS_REVIEW: division "${config.division}" is not in the DRAWS list`;
   }
   const plus = await addDrawButton(page);
-  if (!plus) return 'NEEDS_REVIEW: the "+" next to DRAWS was not found';
+  if (!plus) return `NEEDS_REVIEW: the "+" next to DRAWS was not found. Elements on that bar: ${await describeDrawsBar(page)}`;
   await click(plus);
   const heading = page.getByText(/^\s*create draw\s*$/i);
   await heading.first().waitFor({ state: 'visible', timeout: 8_000 }).catch(() => undefined);
