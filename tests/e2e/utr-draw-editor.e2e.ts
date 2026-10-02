@@ -183,7 +183,7 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 1_5
       const { code, out } = await cli(['create', csv, '--browser-dry-run'], { UTR_DRAW_NAME: 'Playoff 2' });
       assert.equal(code, 0, out);
       assert.match(out, /DRAW SELECT: "Playoff 2" opened/);
-      assert.match(out, /SUMMARY \(browser\): NOT_SUBMITTED=8$/m);
+      assert.match(out, /SUMMARY \(browser\): NOT_SUBMITTED=8\b/); // later rounds may also be listed, as skipped
     });
   });
 });
