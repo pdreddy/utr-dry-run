@@ -194,7 +194,10 @@ export async function createDraw(page: Page, editorUrl: string, config: NewDrawC
     await page.keyboard.press('Escape').catch(() => undefined);
   }
   if (!title) return `NEEDS_REVIEW: the "Create draw" form did not open after clicking: ${tried.join(' ')}. Elements on that bar: ${await describeDrawsBar(page)}`;
-  const panel = title.locator('xpath=ancestor::*[.//button[normalize-space()="CREATE DRAW" or normalize-space()="Create Draw" or normalize-space()="Create draw"]][1]');
+  // The form: the smallest ancestor of its heading that also holds the "Draw name" field
+  // (its CREATE DRAW control is not necessarily a <button>, so it cannot anchor this).
+  const panel = title.locator('xpath=ancestor::*[.//*[translate(normalize-space(text()), "DRAWNME", "drawnme")="draw name"]][1]');
+  if (!await panel.count().catch(() => 0)) return 'NEEDS_REVIEW: the "Create draw" form opened but its "Draw name" field was not found';
   const problems: string[] = [];
   const nameProblem = await setField(page, panel, 'Draw name', config.name);
   if (nameProblem) problems.push(nameProblem);
@@ -206,12 +209,13 @@ export async function createDraw(page: Page, editorUrl: string, config: NewDrawC
   const labels = (await panel.locator('label, legend').allInnerTexts().catch(() => [])).map(t => t.replace(/\s+/g, ' ').trim()).filter(Boolean);
   console.log(`NEW DRAW form fields: ${[...new Set(labels)].join(' | ')}`);
   await screenshot(page, 'new-draw-form');
-  const cancel = await firstVisible(panel.getByRole('button', { name: /^\s*cancel\s*$/i }));
+  const cancel = await firstVisible(panel.getByRole('button', { name: /^\s*cancel\s*$/i })) ?? await firstVisible(panel.getByText(/^\s*cancel\s*$/i));
   if (!live || problems.length) {
     if (cancel) await click(cancel); else await page.keyboard.press('Escape');
     return problems.length ? `NEEDS_REVIEW: ${problems.join('; ')}` : 'NOT_SUBMITTED';
   }
-  const create = await firstVisible(panel.getByRole('button', { name: /^\s*create draw\s*$/i }));
+  const create = await firstVisible(panel.getByRole('button', { name: /^\s*create draw\s*$/i }))
+    ?? await firstVisible(panel.getByText(/^\s*create draw\s*$/i).filter({ hasNot: page.locator('h1, h2, h3, h4, h5, h6') }).last());
   if (!create) return 'NEEDS_REVIEW: CREATE DRAW button not found';
   await click(create);
   await title.waitFor({ state: 'hidden', timeout: 15_000 }).catch(() => undefined);

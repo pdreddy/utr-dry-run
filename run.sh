@@ -36,8 +36,8 @@ Usage: ./run.sh <command> [extra args]
   scores           LIVE: enter all scores recorded in matches.csv
   sync             LIVE: enter scores AND create the next round's matches
   playoff          Guided: asks whether to use an existing draw or create a new one, then fills it step by step
-  new-draw-dry-run Fill the "Create draw" form from draw.json, then CANCEL (creates nothing)
-  new-draw         LIVE: create the draw described in draw.json
+  new-draw-dry-run Asks for the new draw's values (Enter keeps draw.json's), fills "Create draw", then CANCEL
+  new-draw         LIVE: create the draw with the values saved by new-draw-dry-run (draw.json)
   reset-browser    Close a stuck automation browser (fixes "profile is already in use")
   inspect          Save the page structure of what you are looking at (to fit selectors; saves nothing in UTR)
   capture          Record UTR's own web calls while you do one match + one score by hand
@@ -54,18 +54,15 @@ case "$cmd" in
   setup)  npm install && npx playwright install chromium; need_env ;;
   check)  utr validate "$CSV" && utr plan "$CSV" ;;
   reset-browser)   free_profile; echo "Done." ;;
-  new-draw-dry-run) need_env; free_profile; UTR_HEADLESS=false utr new-draw --browser-dry-run --keep-open "$@" ;;
+  new-draw-dry-run) need_env; free_profile; UTR_HEADLESS=false utr new-draw --browser-dry-run --ask --keep-open "$@" ;;
   new-draw)        need_env; free_profile; utr new-draw --live "$@" ;;
   playoff)
           need_env
           ask() { local reply; read -r -p "$1 [y/N] " reply; [[ "$reply" =~ ^[Yy] ]]; }
           read -r -p "Fill an existing draw (e) or create a new draw first (n)? [e/n] " choice
           if [[ "$choice" =~ ^[Nn] ]]; then
-            default=$(node -e "try{console.log(require('./draw.json').name)}catch{console.log('')}")
-            read -r -p "New draw name [$default]: " name; name="${name:-$default}"
-            export UTR_NEW_DRAW_NAME="$name"
-            echo "Settings for the new draw come from draw.json (edit it to change what is selected)."
-            free_profile; utr new-draw --browser-dry-run
+            free_profile; utr new-draw --browser-dry-run --ask
+            name=$(node -e "console.log(JSON.parse(require('fs').readFileSync('draw.json','utf8')).name)")
             ask "The form filled correctly (see screenshots/new-draw-form.png). Create \"$name\" for real?" || exit 0
             free_profile; utr new-draw --live
           else

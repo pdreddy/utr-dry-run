@@ -138,7 +138,7 @@ ${sel('Draw type', 'Ad-Hoc|Round Robin|Single Elimination')}
 <div id="seOnly" style="display:none">${sel('Draw size', '8|16|32', '16')}</div>
 <div id="adhocOnly"><div class="f"><label>Round Size</label><input value="1"></div></div>
 ${sel('Default scoring format', 'Two Sets w/ Match Tiebreaker|Best of 3 Sets|One Set')}
-<button type="button" id="dcancel">CANCEL</button> <button type="button" id="dcreate">CREATE DRAW</button></div>`;
+<div class="actions"><div class="btn" id="dcancel" tabindex="0">CANCEL</div> <div class="btn" id="dcreate" tabindex="0">CREATE DRAW</div></div></div>`;
 }
 
 /** Like the real editor: "Saved" + PUBLISH when clean, "Unsaved changes!" + DISCARD + SAVE once edited. */

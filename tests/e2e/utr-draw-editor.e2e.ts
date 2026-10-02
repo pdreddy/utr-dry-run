@@ -22,7 +22,7 @@ let mock: Awaited<ReturnType<typeof startMockUtr>>;
 let work: string;
 let csv: string;
 
-function cli(args: string[], overrides: Record<string, string> = {}): Promise<{ code: number; out: string }> {
+function cli(args: string[], overrides: Record<string, string> = {}, input?: string): Promise<{ code: number; out: string }> {
   const env = {
     ...process.env, UTR_EVENT_URL: mock.eventUrl, UTR_EVENT_ID: '', UTR_EVENT_NAME: EVENT_NAME, UTR_HEADLESS: 'true', UTR_TARGET: '',
     UTR_DRAW_NAME: 'Playoff', UTR_CONFIG: path.join(work, 'none.json'), UTR_CDP_URL: '', UTR_PROFILE_DIR: path.join(work, 'profile'),
@@ -35,6 +35,7 @@ function cli(args: string[], overrides: Record<string, string> = {}): Promise<{ 
     let out = '';
     child.stdout.on('data', c => { out += c; });
     child.stderr.on('data', c => { out += c; });
+    if (input !== undefined) { child.stdin.write(input); child.stdin.end(); }
     child.on('error', reject);
     child.on('close', code => { if (process.env.E2E_VERBOSE) console.log(`$ utr ${args.join(' ')}\n${out}`); resolve({ code: code ?? -1, out }); });
   });
@@ -164,6 +165,22 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 1_5
       const { code, out } = await cli(['new-draw', '--live'], config({ ...fields, 'Draw type': 'Swiss' }));
       assert.equal(code, 2, out);
       assert.match(out, /"Swiss" is not an option for "Draw type" \(options: Ad-Hoc, Round Robin, Single Elimination\)/);
+      assert.equal(mock.state.draws.length, 0);
+    });
+
+    it('--ask takes typed values (Enter keeps the default) and saves them for the live run', async () => {
+      const env = config(fields, 'Typed Draw');
+      // Name, then the 7 fields in order: change Ball type, keep the rest.
+      const answers = 'Playoff Typed\n\n\nGreen Ball\n\n\n\n\n';
+      const { code, out } = await cli(['new-draw', '--browser-dry-run', '--ask'], env, answers);
+      assert.equal(code, 0, out);
+      assert.match(out, /NEW DRAW: "Playoff Typed"/);
+      assert.match(out, /NEW DRAW Ball type: "Green Ball"/);
+      assert.match(out, /NEW DRAW RESULT: NOT_SUBMITTED/);
+      const saved = JSON.parse(fs.readFileSync(env.UTR_DRAW_CONFIG, 'utf8'));
+      assert.equal(saved.name, 'Playoff Typed');
+      assert.equal(saved.fields['Ball type'], 'Green Ball');
+      assert.equal(saved.fields['Draw type'], 'Single Elimination');
       assert.equal(mock.state.draws.length, 0);
     });
 

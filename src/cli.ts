@@ -186,6 +186,32 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
 async function newDraw(options: ModeOptions): Promise<void> {
   const mode = requireMode(options);
   const config = readDrawConfig();
+  if (process.argv.includes('--ask')) {
+    // Ask for each value, defaulting to draw.json's; the answers are saved back to it so the
+    // live run that follows a dry run uses the same values without asking again.
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    // Buffer lines ourselves: answers pasted or piped in at once arrive before each question is asked.
+    const lines: string[] = [];
+    let waiting: ((line: string) => void) | undefined, closed = false;
+    rl.on('line', line => { if (waiting) { waiting(line); waiting = undefined; } else lines.push(line); });
+    rl.on('close', () => { closed = true; waiting?.(''); });
+    const ask = async (question: string, current: string) => {
+      process.stdout.write(`${question} [${current}]: `);
+      const answer = lines.length ? lines.shift()! : closed ? '' : await new Promise<string>(resolve => { waiting = resolve; });
+      return answer.trim() || current;
+    };
+    console.log('Enter a value, or press Enter to keep the one in [brackets].');
+    config.name = await ask('Draw name', config.name);
+    for (const [label, value] of Object.entries(config.fields)) {
+      config.fields[label] = typeof value === 'boolean'
+        ? /^y/i.test(await ask(`${label}? (y/n)`, value ? 'y' : 'n'))
+        : await ask(label, value);
+    }
+    rl.close();
+    const file = process.env.UTR_DRAW_CONFIG || 'draw.json';
+    fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+    console.log(`Saved these values to ${file}.`);
+  }
   console.log(`NEW DRAW: "${config.name}"${config.division ? ` under ${config.division}` : ''}`);
   for (const [label, value] of Object.entries(config.fields)) console.log(`  ${label}: ${JSON.stringify(value)}`);
   if (mode === 'dry') return;
