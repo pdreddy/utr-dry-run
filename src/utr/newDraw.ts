@@ -58,30 +58,34 @@ async function drawListed(page: Page, name: string): Promise<boolean> {
  * text, to its right and within the panel's width, counts; the left rail's "Draws" item
  * has none. Prefers one labelled add/create/new.
  */
-async function addDrawButton(page: Page): Promise<Locator | undefined> {
+async function addDrawCandidates(page: Page): Promise<{ el: Locator; box: { x: number; y: number; width: number; height: number }; label: string }[]> {
   const headers = page.getByText(/^\s*draws\s*$/i);
   const icons = page.locator('button:visible, [role="button"]:visible, svg:visible, img:visible, i:visible, [class*="icon" i]:visible, [class*="add" i]:visible, [class*="plus" i]:visible, [aria-label]:visible, [title]:visible');
+  // The DRAWS panel's right edge: its "Find a draw" box spans the panel.
+  const find = await page.getByPlaceholder(/find a draw/i).first().boundingBox().catch(() => null);
   for (let i = 0; i < Math.min(await headers.count(), 6); i++) {
     const header = headers.nth(i);
     const box = await header.boundingBox().catch(() => null);
     if (!box || !await header.isVisible().catch(() => false)) continue;
+    if (find && (find.y < box.y || Math.abs(find.x - box.x) > 80)) continue; // the left rail's "Draws", not this panel
     const midY = box.y + box.height / 2;
-    let best: { el: Locator; score: number } | undefined;
+    const right = find ? find.x + find.width + 40 : box.x + 320;
+    const found: { el: Locator; box: { x: number; y: number; width: number; height: number }; label: string; score: number }[] = [];
     for (let j = 0; j < Math.min(await icons.count().catch(() => 0), 400); j++) {
       const el = icons.nth(j);
       const c = await el.boundingBox().catch(() => null);
       if (!c || c.width > 60 || c.height > 60) continue; // an icon, not a whole bar
       // The header element can span the whole bar (word and icon share it), so only require
-      // the icon to start right of where the word starts, and not be the header itself.
-      if (c.x < box.x + 30 || c.x > box.x + 450 || Math.abs(c.y + c.height / 2 - midY) > 18) continue;
+      // the icon to start right of where the word starts, inside the panel, level with it.
+      if (c.x < box.x + 30 || c.x > right || Math.abs(c.y + c.height / 2 - midY) > 14) continue;
       if (await el.evaluate((node, text) => (node.textContent ?? '').trim().toLowerCase() === text, 'draws').catch(() => false)) continue;
-      const named = /add|create|new|plus/i.test(`${await el.getAttribute('aria-label').catch(() => '')} ${await el.getAttribute('title').catch(() => '')} ${await el.getAttribute('class').catch(() => '')}`);
-      const score = (named ? 1000 : 0) + c.x; // labelled first, then the rightmost
-      if (!best || score > best.score) best = { el, score };
+      const attrs = `${await el.getAttribute('aria-label').catch(() => '')} ${await el.getAttribute('title').catch(() => '')} ${await el.getAttribute('class').catch(() => '')}`;
+      const tag = await el.evaluate(node => node.tagName.toLowerCase()).catch(() => '?');
+      found.push({ el, box: c, label: `<${tag} ${attrs.trim()} x=${Math.round(c.x)}>`, score: (/add|create|new|plus/i.test(attrs) ? 1000 : 0) + c.x });
     }
-    if (best) return best.el;
+    if (found.length) return found.sort((p, q) => q.score - p.score);
   }
-  return undefined;
+  return [];
 }
 
 /** What is on the DRAWS header bar (tag, class, label, box), for fixing the "+" lookup from a real run. */
@@ -171,13 +175,25 @@ export async function createDraw(page: Page, editorUrl: string, config: NewDrawC
   if (config.division && !await firstVisible(page.getByText(exact(config.division)))) {
     return `NEEDS_REVIEW: division "${config.division}" is not in the DRAWS list`;
   }
-  const plus = await addDrawButton(page);
-  if (!plus) return `NEEDS_REVIEW: the "+" next to DRAWS was not found. Elements on that bar: ${await describeDrawsBar(page)}`;
-  await click(plus);
-  const heading = page.getByText(/^\s*create draw\s*$/i);
-  await heading.first().waitFor({ state: 'visible', timeout: 8_000 }).catch(() => undefined);
-  const title = await firstVisible(heading);
-  if (!title) return 'NEEDS_REVIEW: the "Create draw" form did not open';
+  const candidates = await addDrawCandidates(page);
+  if (!candidates.length) return `NEEDS_REVIEW: the "+" next to DRAWS was not found. Elements on that bar: ${await describeDrawsBar(page)}`;
+  // Only a heading counts, not the form's own CREATE DRAW button.
+  const heading = page.locator('h1, h2, h3, h4, h5, h6, [class*="title" i], [class*="header" i], [class*="heading" i]').filter({ hasText: /^\s*create draw\s*$/i });
+  let title: Locator | undefined;
+  const tried: string[] = [];
+  for (const candidate of candidates.slice(0, 4)) {
+    tried.push(candidate.label);
+    if (EDITOR.forbiddenClick.test(candidate.label)) continue;
+    // Click the icon's centre like a person would; an inner part of an icon may ignore a
+    // click dispatched on it, while the element under the pointer handles a real one.
+    await page.mouse.click(candidate.box.x + candidate.box.width / 2, candidate.box.y + candidate.box.height / 2);
+    await heading.first().waitFor({ state: 'visible', timeout: 4_000 }).catch(() => undefined);
+    title = await firstVisible(heading) ?? await firstVisible(page.getByText(/^\s*create draw\s*$/i).filter({ hasNot: page.locator('button') }));
+    if (title && (await title.evaluate(node => node.tagName.toLowerCase()).catch(() => '')) !== 'button') break;
+    title = undefined;
+    await page.keyboard.press('Escape').catch(() => undefined);
+  }
+  if (!title) return `NEEDS_REVIEW: the "Create draw" form did not open after clicking: ${tried.join(' ')}. Elements on that bar: ${await describeDrawsBar(page)}`;
   const panel = title.locator('xpath=ancestor::*[.//button[normalize-space()="CREATE DRAW" or normalize-space()="Create Draw" or normalize-space()="Create draw"]][1]');
   const problems: string[] = [];
   const nameProblem = await setField(page, panel, 'Draw name', config.name);

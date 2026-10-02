@@ -158,7 +158,7 @@ function editorPage(state: MockState): string {
 <body><header><a data-testid="user-menu" href="/profile/1">My profile</a></header>
 <h1>${escapeHtml(state.eventName)}</h1>
 <nav><button type="button" id="rail">Draws</button></nav>
-<div id="side" style="display:none"><input placeholder="Find a draw"><div class="dh" style="display:flex;width:280px">DRAWS<svg id="newdraw" width="18" height="18" style="margin-left:auto;cursor:pointer"><circle cx="9" cy="9" r="8" fill="none" stroke="#333"/><path d="M9 5v8M5 9h8" stroke="#333"/></svg></div>
+<div id="side" style="display:none"><div class="dh" style="display:flex;width:280px">DRAWS<svg id="newdraw" width="18" height="18" style="margin-left:auto;cursor:pointer"><circle cx="9" cy="9" r="8" fill="none" stroke="#333"/><path d="M9 5v8M5 9h8" stroke="#333"/></svg></div><input placeholder="Find a draw" style="width:270px">
 <div>U14-Youth</div><ul class="side"><li id="g1">Group 01</li><li class="dr">Playoff</li>${state.draws.map(d => `<li class="dr">${escapeHtml(d.name)}</li>`).join('')}</ul></div>
 ${createDrawPanel()}
 <div id="groupView"><div>Round Robin, Co-ed, Two Sets w/ Match Tiebreaker, 8 Players</div><h2>Round 1</h2>
