@@ -52,20 +52,31 @@ async function drawListed(page: Page, name: string): Promise<boolean> {
   return !!await firstVisible(page.getByText(exact(name)));
 }
 
-/** The "+" beside the DRAWS panel's own header (not the left rail's "Draws" button). */
+/**
+ * The "+" on the DRAWS panel's header bar (a circled plus at the bar's right end, not
+ * necessarily a <button>). Any visible clickable or icon element level with the header
+ * text, to its right and within the panel's width, counts; the left rail's "Draws" item
+ * has none. Prefers one labelled add/create/new.
+ */
 async function addDrawButton(page: Page): Promise<Locator | undefined> {
   const headers = page.getByText(/^\s*draws\s*$/i);
+  const icons = page.locator('button:visible, [role="button"]:visible, svg:visible, img:visible, i:visible, [class*="icon" i]:visible, [class*="add" i]:visible, [class*="plus" i]:visible, [aria-label]:visible, [title]:visible');
   for (let i = 0; i < Math.min(await headers.count(), 6); i++) {
     const header = headers.nth(i);
     const box = await header.boundingBox().catch(() => null);
     if (!box || !await header.isVisible().catch(() => false)) continue;
-    for (let depth = 1; depth <= 3; depth++) {
-      const controls = header.locator(`xpath=ancestor::*[${depth}]`).locator('button:visible, [role="button"]:visible, svg:visible');
-      for (let j = 0; j < Math.min(await controls.count().catch(() => 0), 10); j++) {
-        const c = await controls.nth(j).boundingBox().catch(() => null);
-        if (c && c.x > box.x + box.width && Math.abs(c.y + c.height / 2 - (box.y + box.height / 2)) < 25) return controls.nth(j);
-      }
+    const midY = box.y + box.height / 2;
+    let best: { el: Locator; score: number } | undefined;
+    for (let j = 0; j < Math.min(await icons.count().catch(() => 0), 400); j++) {
+      const el = icons.nth(j);
+      const c = await el.boundingBox().catch(() => null);
+      if (!c || c.width > 60 || c.height > 60) continue; // an icon, not a whole bar
+      if (c.x < box.x + box.width || c.x > box.x + 400 || Math.abs(c.y + c.height / 2 - midY) > 18) continue;
+      const named = /add|create|new|plus/i.test(`${await el.getAttribute('aria-label').catch(() => '')} ${await el.getAttribute('title').catch(() => '')} ${await el.getAttribute('class').catch(() => '')}`);
+      const score = (named ? 1000 : 0) + c.x; // labelled first, then the rightmost
+      if (!best || score > best.score) best = { el, score };
     }
+    if (best) return best.el;
   }
   return undefined;
 }
