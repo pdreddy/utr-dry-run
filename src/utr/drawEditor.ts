@@ -32,7 +32,7 @@ export function inRosterSection(box: Box | null, header: Box): boolean {
  * leftmost column is the round selected in the header, and every action is scoped
  * to the single card that holds that match's header.
  *
- * The editor autosaves; PUBLISH is a separate button. This class never clicks
+ * Edits are a draft until the editor's SAVE is clicked (see save()); PUBLISH is separate. This class never clicks
  * anything whose label matches EDITOR.forbiddenClick, publish in particular.
  */
 export class UtrDrawEditor {
@@ -317,10 +317,50 @@ export class UtrDrawEditor {
     }).catch(() => '');
   }
 
-  /** Waits for UTR's autosave indicator to settle after an edit. */
-  private async waitForSaved(): Promise<void> {
-    await this.page.getByText('Saved', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 }).catch(() => undefined);
+  /**
+   * Lets the bracket re-render after an edit. Edits are only a draft ("Unsaved changes!")
+   * until SAVE is clicked, so this never reloads: a reload would throw the draft away.
+   */
+  private async settle(): Promise<void> {
+    await this.page.waitForLoadState('networkidle', { timeout: 3_000 }).catch(() => undefined);
     await this.page.waitForTimeout(500);
+  }
+
+  /** Polls Match #n's card until `done` holds for its text, without reloading the page. */
+  private async waitForCard(n: number, done: (text: string) => boolean, ms = 8_000): Promise<string> {
+    const deadline = Date.now() + ms;
+    let text = '';
+    do {
+      const card = await this.matchCard(n);
+      text = card ? await this.cardText(card) : '';
+      if (done(text)) return text;
+      await this.page.waitForTimeout(300);
+    } while (Date.now() < deadline);
+    return text;
+  }
+
+  /**
+   * Clicks the editor's own SAVE (next to DISCARD, shown with "Unsaved changes!"), never
+   * a Save inside a dialog, and waits for the unsaved notice to clear. Never publishes.
+   */
+  async save(): Promise<string> {
+    await this.page.keyboard.press('Escape').catch(() => undefined);
+    const unsaved = () => this.page.getByText(/unsaved changes/i).first().isVisible().catch(() => false);
+    const buttons = this.page.getByRole('button', { name: /^\s*save\s*$/i });
+    let target: Locator | undefined, topY = Infinity;
+    for (let i = 0; i < Math.min(await buttons.count().catch(() => 0), 10); i++) {
+      const button = buttons.nth(i);
+      if (!await button.isVisible().catch(() => false)) continue;
+      if (await button.locator('xpath=ancestor::*[@role="dialog" or @aria-modal="true"]').count().catch(() => 0)) continue;
+      const box = await button.boundingBox().catch(() => null);
+      if (box && box.y < topY) { target = button; topY = box.y; }
+    }
+    if (!target) return await unsaved() ? 'NEEDS_REVIEW: "Unsaved changes!" is shown but no SAVE button was found' : 'NO_CHANGES';
+    await this.safeClick(target);
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline && await unsaved()) await this.page.waitForTimeout(500);
+    await screenshot(this.page, 'draw-after-save');
+    return await unsaved() ? 'NEEDS_REVIEW: clicked SAVE but "Unsaved changes!" is still shown' : 'SAVED';
   }
 
   /** The visible input nearest the card: the type-to-filter box the picker opens, not the page's own player-list filter. */
@@ -437,21 +477,18 @@ export class UtrDrawEditor {
     if (!hasA) {
       a = await this.fillSlot(card, row.player_a);
       if (a === 'missing' || a === 'ambiguous') return { result: `NEEDS_REVIEW: player A ${a}`, playerA: a };
-      await this.waitForSaved();
+      await this.settle();
     }
     if (!hasB) {
-      await this.ensureDraw();
       const fresh = (await this.matchCard(n))!;
       b = await this.fillSlot(fresh, row.player_b);
       if (b === 'missing' || b === 'ambiguous') return { result: `NEEDS_REVIEW: player B ${b}`, playerA: a, playerB: b };
-      await this.waitForSaved();
+      await this.settle();
     }
-    await this.open();
-    const confirmed = await this.matchCard(n);
-    const after = confirmed ? await this.cardText(confirmed) : '';
+    const after = await this.waitForCard(n, t => playerLine(t, row.player_a) >= 0 && playerLine(t, row.player_b) >= 0);
     await screenshot(this.page, `${row.match_id}-created`);
     if (playerLine(after, row.player_a) < 0 || playerLine(after, row.player_b) < 0) {
-      return { result: 'NEEDS_REVIEW: players are not shown in the bracket after saving', playerA: a, playerB: b };
+      return { result: 'NEEDS_REVIEW: players are not shown in the bracket after selecting them', playerA: a, playerB: b };
     }
     return { result: 'CREATED', playerA: a, playerB: b, submitAvailable: true, utrMatchId: `R16-${n}`, utrMatchUrl: this.url };
   }
@@ -494,16 +531,11 @@ export class UtrDrawEditor {
       // The editor may save without a separate API round trip we can observe; fall back to the card check.
       if (!/waitForResponse|Timeout/i.test((error as Error).message)) throw error;
     });
-    await this.waitForSaved();
-    await this.open();
-    const deadline = Date.now() + 10_000;
-    while (Date.now() < deadline) {
-      const fresh = n ? await this.matchCard(n) : undefined;
-      if (fresh && renderedScoreMatches(await this.cardText(fresh), sets, aFirst)) {
-        await screenshot(this.page, `${row.match_id}-score-confirmed`);
-        return 'SCORE_SYNCED';
-      }
-      await this.page.waitForTimeout(300);
+    await this.settle();
+    const shown = await this.waitForCard(n!, t => renderedScoreMatches(t, sets, aFirst), 10_000);
+    if (renderedScoreMatches(shown, sets, aFirst)) {
+      await screenshot(this.page, `${row.match_id}-score-confirmed`);
+      return 'SCORE_SYNCED';
     }
     return 'NEEDS_REVIEW: UTR accepted the score but it is not shown on the match';
   }

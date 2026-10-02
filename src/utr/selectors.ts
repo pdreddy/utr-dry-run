@@ -64,5 +64,5 @@ export const SELECTORS = {
 export const EDITOR = {
   emptySlot: 'Select a player',
   matchHeader: /^Match #(\d+)/,
-  forbiddenClick: /publish|unpublish|delete|remove|reset|clear/i
+  forbiddenClick: /publish|unpublish|discard|delete|remove|reset|clear/i
 } as const;

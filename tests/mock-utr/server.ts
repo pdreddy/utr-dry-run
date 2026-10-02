@@ -122,6 +122,13 @@ function rosterHtml(state: MockState, query = ''): string {
     `<div class="sec" id="nidHeader">PLAYERS NOT IN DRAW (${notInDraw.length})</div><ul id="roster" style="display:none">${shown.map(row).join('')}</ul>`;
 }
 
+/** Like the real editor: "Saved" + PUBLISH when clean, "Unsaved changes!" + DISCARD + SAVE once edited. */
+function statusHtml(dirty: boolean): string {
+  return dirty
+    ? '<span>Unsaved changes!</span> <button type="button" id="discard">DISCARD</button> <button type="button" id="savebtn">SAVE</button>'
+    : '<span>Saved</span> <button type="button" id="publish">PUBLISH</button>';
+}
+
 function editorPage(state: MockState): string {
   return `<!doctype html><html><head><title>${escapeHtml(state.eventName)} | UTR</title>
 <style>.cols{display:flex;gap:40px}.card{border:1px solid #ccc;margin:8px;padding:8px;width:340px}.slot{display:block;margin:4px 0}.set{margin-left:10px}
@@ -134,7 +141,7 @@ function editorPage(state: MockState): string {
 <nav><button type="button" id="rail">Draws</button></nav><div><ul class="side" id="side" style="display:none"><li id="g1">Group 01</li><li id="po">Playoff</li></ul></div>
 <div id="groupView"><div>Round Robin, Co-ed, Two Sets w/ Match Tiebreaker, 8 Players</div><h2>Round 1</h2>
   <div class="card"><span class="mn">Match #1</span><div class="slot">Pritish Singhal</div><div class="slot">Bye</div><button type="button">Score</button></div></div>
-<div id="playoffView" style="display:none"><div>Single Elimination, Co-ed, Two Sets w/ Match Tiebreaker, 16 Players</div><span id="saved">Saved</span> <button type="button" id="publish">PUBLISH</button>
+<div id="playoffView" style="display:none"><div>Single Elimination, Co-ed, Two Sets w/ Match Tiebreaker, 16 Players</div><span id="status">${statusHtml(false)}</span>
 <div style="display:flex;gap:24px"><aside style="width:320px;flex:none"><input placeholder="Filter Players" id="pfilter">
 <div id="rosterPanel">${rosterHtml(state)}</div></aside>
 <div class="cols">${editorHtml(state)}</div></div></div>
@@ -143,9 +150,19 @@ function editorPage(state: MockState): string {
 document.getElementById('rail').onclick = () => { const l = document.getElementById('side'); l.style.display = l.style.display === 'none' ? 'block' : 'none'; };
 document.getElementById('po').onclick = () => { document.getElementById('groupView').style.display = 'none'; document.getElementById('playoffView').style.display = 'block'; };
 const call = (method, url, body) => fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(async r => { if (!r.ok) throw new Error(await r.text()); return r.json(); });
-document.getElementById('publish').onclick = () => call('POST', '/api/v1/draw/publish', {}).then(refresh);
-// Like the real editor's autosave, a slot pick or score save updates the bracket in place, with no page reload.
-async function refresh() { document.querySelector('.cols').innerHTML = (await fetch('/api/v1/draw/fragment').then(r => r.json())).html; bind(); }
+// Like the real editor, an edit updates the bracket in place but stays a draft ("Unsaved
+// changes!") until SAVE; a reload or DISCARD throws the draft away.
+function bindStatus() {
+  const publish = document.getElementById('publish'), save = document.getElementById('savebtn'), discard = document.getElementById('discard');
+  if (publish) publish.onclick = () => call('POST', '/api/v1/draw/publish', {}).then(refresh);
+  if (save) save.onclick = () => call('POST', '/api/v1/draw/save', {}).then(refresh);
+  if (discard) discard.onclick = () => location.reload();
+}
+async function refresh() {
+  const f = await fetch('/api/v1/draw/fragment').then(r => r.json());
+  document.querySelector('.cols').innerHTML = f.html; document.getElementById('status').innerHTML = f.status; bindStatus(); bind();
+}
+bindStatus();
 async function refreshRoster() { document.getElementById('rosterPanel').innerHTML = (await fetch('/api/v1/draw/roster/html?query=' + encodeURIComponent(document.getElementById('pfilter').value)).then(r => r.json())).html; bindRoster(); }
 document.getElementById('pfilter').addEventListener('input', refreshRoster);
 // Like the real sidebar, "Players not in draw" starts collapsed (and says nothing about it
@@ -210,6 +227,9 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
 export async function startMockUtr(port = 0): Promise<{ origin: string; eventUrl: string; state: MockState; close(): Promise<void> }> {
   const state: MockState = { eventId: EVENT_ID, eventName: EVENT_NAME, players: PLAYERS, matches: [], writes: [], editor: { r16: Array.from({ length: 8 }, () => ({})), qf: Array.from({ length: 4 }, () => ({})), published: false, roster: [] as number[] } };
   let nextId = 9001;
+  // The draw editor's unsaved draft: a copy of the saved bracket made when the page loads.
+  let draft: MockState['editor'] = structuredClone(state.editor);
+  const view = (): MockState => ({ ...state, editor: draft });
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const send = (status: number, body: unknown, type = 'application/json') => {
@@ -219,32 +239,33 @@ export async function startMockUtr(port = 0): Promise<{ origin: string; eventUrl
     try {
       if (req.method !== 'GET') state.writes.push({ method: req.method!, path: url.pathname });
       if (req.method === 'GET' && url.pathname === `/events/${EVENT_ID}`) return send(200, eventHtml(state), 'text/html');
-      if (req.method === 'GET' && url.pathname === `/events/${EVENT_ID}/draws`) return send(200, editorPage(state), 'text/html');
-      if (req.method === 'GET' && url.pathname === '/api/v1/draw/fragment') return send(200, { html: editorHtml(state) });
-      if (req.method === 'GET' && url.pathname === '/api/v1/draw/roster/html') return send(200, { html: rosterHtml(state, url.searchParams.get('query') ?? '') });
+      if (req.method === 'GET' && url.pathname === `/events/${EVENT_ID}/draws`) { draft = structuredClone(state.editor); return send(200, editorPage(view()), 'text/html'); }
+      if (req.method === 'GET' && url.pathname === '/api/v1/draw/fragment') return send(200, { html: editorHtml(view()), status: statusHtml(JSON.stringify(draft) !== JSON.stringify(state.editor)) });
+      if (req.method === 'GET' && url.pathname === '/api/v1/draw/roster/html') return send(200, { html: rosterHtml(view(), url.searchParams.get('query') ?? '') });
+      if (req.method === 'POST' && url.pathname === '/api/v1/draw/save') { state.editor = structuredClone({ ...draft, published: state.editor.published }); return send(200, { ok: true }); }
       if (req.method === 'POST' && url.pathname === '/api/v1/draw/roster') {
         const body = await readJson(req);
         const index = Number(body.index);
         if (!Number.isInteger(index) || !state.players[index]) return send(400, { error: 'unknown player' });
-        if (state.editor.roster.includes(index)) return send(409, { error: 'already in draw' });
-        state.editor.roster.push(index);
+        if (draft.roster.includes(index)) return send(409, { error: 'already in draw' });
+        draft.roster.push(index);
         return send(200, { ok: true });
       }
       if (req.method === 'GET' && url.pathname === '/api/v1/draw/players') {
         const query = (url.searchParams.get('query') ?? '').toLowerCase();
-        return send(200, state.editor.roster.filter(index => query.length >= 2 && state.players[index]!.toLowerCase().includes(query))
+        return send(200, draft.roster.filter(index => query.length >= 2 && state.players[index]!.toLowerCase().includes(query))
           .map(index => ({ id: String(index), name: state.players[index]!, rating: (7 + (index % 5) / 2).toFixed(2) })));
       }
-      if (req.method === 'POST' && url.pathname === '/api/v1/draw/publish') { state.editor.published = true; return send(200, { ok: true }); }
+      if (req.method === 'POST' && url.pathname === '/api/v1/draw/publish') { state.editor.published = draft.published = true; return send(200, { ok: true }); }
       const slotRoute = url.pathname.match(/^\/api\/v1\/draw\/(r16|qf)\/(\d+)\/(slot|score)$/);
       if (req.method === 'PUT' && slotRoute) {
-        const slots = state.editor[slotRoute[1] as 'r16' | 'qf'], slot = slots[Number(slotRoute[2]) - 1];
+        const slots = draft[slotRoute[1] as 'r16' | 'qf'], slot = slots[Number(slotRoute[2]) - 1];
         const body = await readJson(req);
         if (!slot) return send(404, { error: 'unknown match' });
         if (slotRoute[3] === 'slot') {
           const key = String(body.slot) === '0' ? 'a' : 'b';
-          if (!state.editor.roster.some(index => state.players[index] === String(body.name))) return send(400, { error: 'player is not on the draw roster' });
-          if (Object.values(state.editor.r16).some(m => m.a === body.name || m.b === body.name)) return send(409, { error: 'player already placed' });
+          if (!draft.roster.some(index => state.players[index] === String(body.name))) return send(400, { error: 'player is not on the draw roster' });
+          if (draft.r16.some(m => m.a === body.name || m.b === body.name)) return send(409, { error: 'player already placed' });
           slot[key] = String(body.name); return send(200, { ok: true });
         }
         const sets = (body.sets ?? []) as { a: number; b: number }[];

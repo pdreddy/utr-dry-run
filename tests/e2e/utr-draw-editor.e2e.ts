@@ -68,6 +68,7 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 1_5
     assert.equal(code, 0, out);
     assert.equal(out.match(/^ROSTER .+: added$/gm)?.length, 16, out);
     assert.equal(mock.state.editor.roster.length, 16, 'all 16 are added to the draw first, even for one match');
+    assert.match(out, /^DRAW SAVE: SAVED$/m, 'the draft is saved at the end; nothing above is kept without it');
     assert.deepEqual([r16()[0]!.a, r16()[0]!.b], ['Pranav Vommi', 'Ridit Sarkar']);
     assert.ok(r16().slice(1).every(m => !m.a && !m.b));
     assert.equal(readMatches(csv)[0]!.utr_sync_status, 'MATCH_CREATED');

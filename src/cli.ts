@@ -169,6 +169,13 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
       if (!results.includes('NEEDS_REVIEW')) logger.log({ ...row, action: operation, result: results.join('+'), utr_match_id: row.utr_match_id || undefined });
       if (mode === 'live') writeMatches(absolute, rows);
     }
+    // The draw editor keeps every edit (players added, slots filled, scores) as a draft
+    // until its SAVE is clicked; leaving without saving would lose all of it. Never publishes.
+    if (eventPage instanceof UtrDrawEditor && mode === 'live') {
+      const saved = await eventPage.save();
+      console.log(`DRAW SAVE: ${saved}`);
+      if (saved.startsWith('NEEDS_REVIEW')) totals.NEEDS_REVIEW = (totals.NEEDS_REVIEW ?? 0) + 1;
+    }
   });
   console.log(`\nSUMMARY (${mode}): ${Object.entries(totals).map(([k, v]) => `${k}=${v}`).join(' ') || 'nothing to do'}`);
   if (totals.NEEDS_REVIEW) process.exitCode = 2;
