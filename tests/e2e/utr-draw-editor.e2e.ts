@@ -178,6 +178,8 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 1_5
     });
 
     it('the new draw is then filled by name, like Playoff', async () => {
+      // The mock shows one bracket for every single-elimination draw; start this one empty.
+      mock.state.editor = { r16: Array.from({ length: 8 }, () => ({})), qf: Array.from({ length: 4 }, () => ({})), published: false, roster: [] };
       const { code, out } = await cli(['create', csv, '--browser-dry-run'], { UTR_DRAW_NAME: 'Playoff 2' });
       assert.equal(code, 0, out);
       assert.match(out, /DRAW SELECT: "Playoff 2" opened/);
