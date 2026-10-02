@@ -10,6 +10,7 @@ import { openSession } from './utr/browser.ts';
 import { ensureAuthenticated } from './utr/login.ts';
 import { automationTarget, drawEditorUrl, eventUrl, openAndVerifyEvent, siteOrigin } from './utr/event.ts';
 import { UtrDrawEditor } from './utr/drawEditor.ts';
+import { createDraw, readDrawConfig } from './utr/newDraw.ts';
 import { discoverControls } from './utr/discovery.ts';
 import { UtrEventPage } from './utr/eventPage.ts';
 import { recordApiCalls } from './utr/network.ts';
@@ -181,6 +182,26 @@ async function browserRun(file: string, operation: Operation, options: ModeOptio
   if (totals.NEEDS_REVIEW) process.exitCode = 2;
 }
 
+/** Creates a new draw from draw.json in the Event Desk editor; a browser dry run fills the form and cancels. */
+async function newDraw(options: ModeOptions): Promise<void> {
+  const mode = requireMode(options);
+  const config = readDrawConfig();
+  console.log(`NEW DRAW: "${config.name}"${config.division ? ` under ${config.division}` : ''}`);
+  for (const [label, value] of Object.entries(config.fields)) console.log(`  ${label}: ${JSON.stringify(value)}`);
+  if (mode === 'dry') return;
+  const editor = drawEditorUrl();
+  if (!editor) throw new Error('Set eventUrl in utr.config.json (with the d= draw id) so the draw editor can be opened');
+  let result = '';
+  await withBrowser(options, async page => {
+    const event = await openAndVerifyEvent(page, mode === 'live');
+    console.log(`UTR EVENT:\n${event.name}\n\nEVENT VERIFIED: ${event.verified ? 'YES' : 'NO'}`);
+    result = await createDraw(page, editor, config, mode === 'live');
+    console.log(`NEW DRAW RESULT: ${result}`);
+    if (result === 'CREATED' || result === 'SKIP_ALREADY_EXISTS') console.log(`Next: run with UTR_DRAW_NAME="${config.name}" to fill this draw.`);
+  });
+  if (result.startsWith('NEEDS_REVIEW')) process.exitCode = 2;
+}
+
 /** Records the UTR web app's own API calls while the account owner performs one create and one score by hand. */
 async function capture(options: ModeOptions): Promise<void> {
   await withBrowser({ ...options, keepOpen: false }, async page => {
@@ -230,8 +251,8 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const command = args[0];
   const file = args[1] && !args[1].startsWith('--') ? args[1] : 'matches.csv';
-  if (!command || !['validate', 'plan', 'create', 'scores', 'sync', 'capture', 'inspect'].includes(command)) {
-    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync|capture|inspect> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all|--only <match_id>] [--keep-open]');
+  if (!command || !['validate', 'plan', 'create', 'scores', 'sync', 'capture', 'inspect', 'new-draw'].includes(command)) {
+    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync|capture|inspect|new-draw> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all|--only <match_id>] [--keep-open]');
   }
   if (command === 'validate') { console.log(`VALID: ${load(file).rows.length} matches`); return; }
   if (command === 'plan') { printPlan(load(file).rows); return; }
@@ -242,6 +263,7 @@ async function main(): Promise<void> {
   };
   if (command === 'capture') { await capture(options); return; }
   if (command === 'inspect') { await inspect(options, file); return; }
+  if (command === 'new-draw') { await newDraw(options); return; }
   if (options.only !== undefined && (!options.only || options.only.startsWith('--'))) throw new Error('--only requires a match_id');
   if (options.only && options.all) throw new Error('Use either --only or --all, not both');
   await browserRun(file, command as Operation, options);

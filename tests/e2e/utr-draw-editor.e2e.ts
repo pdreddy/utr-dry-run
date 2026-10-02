@@ -138,4 +138,50 @@ describe('UTR Playoff draw editor, Round of 16 against the mock', { timeout: 1_5
     assert.equal(slotWrites(), before, 'the occupied match is never written to (adding players to the draw first is fine)');
     assert.deepEqual(mock.state.editor.r16[0], { a: 'Aarav Shah', b: 'Viswesh Vasu' });
   });
+
+  describe('creating a new draw from draw.json', () => {
+    const config = (fields: Record<string, string | boolean>, name = 'Playoff 2') => {
+      const file = path.join(work, `draw-${Object.keys(fields).length}-${name.replace(/\W/g, '')}.json`);
+      fs.writeFileSync(file, JSON.stringify({ division: 'U14-Youth', name, fields }));
+      return { UTR_DRAW_CONFIG: file };
+    };
+    const fields = {
+      'Game type': 'Singles', Gender: 'Co-ed', 'Ball type': 'Yellow Ball', 'Results will count towards ratings': true,
+      'Draw type': 'Single Elimination', 'Draw size': '16', 'Default scoring format': 'Two Sets w/ Match Tiebreaker'
+    };
+
+    it('dry run fills the form and cancels', async () => {
+      const before = writes();
+      const { code, out } = await cli(['new-draw', '--browser-dry-run'], config(fields));
+      assert.equal(code, 0, out);
+      assert.match(out, /NEW DRAW RESULT: NOT_SUBMITTED/);
+      assert.match(out, /NEW DRAW Draw size: "16"/, 'a field revealed by Draw type is filled after it');
+      assert.equal(mock.state.draws.length, 0);
+      assert.equal(writes(), before);
+    });
+
+    it('an option the form does not offer stops it, listing what is offered, and creates nothing', async () => {
+      const { code, out } = await cli(['new-draw', '--live'], config({ ...fields, 'Draw type': 'Swiss' }));
+      assert.equal(code, 2, out);
+      assert.match(out, /"Swiss" is not an option for "Draw type" \(options: Ad-Hoc, Round Robin, Single Elimination\)/);
+      assert.equal(mock.state.draws.length, 0);
+    });
+
+    it('live creates the draw once, with every field as picked', async () => {
+      const { code, out } = await cli(['new-draw', '--live'], config(fields));
+      assert.equal(code, 0, out);
+      assert.match(out, /NEW DRAW RESULT: CREATED/);
+      assert.deepEqual(mock.state.draws, [{ name: 'Playoff 2', fields: { ...fields, 'This event will have on-site officials': false } }]);
+      const again = await cli(['new-draw', '--live'], config(fields));
+      assert.match(again.out, /NEW DRAW RESULT: SKIP_ALREADY_EXISTS/);
+      assert.equal(mock.state.draws.length, 1);
+    });
+
+    it('the new draw is then filled by name, like Playoff', async () => {
+      const { code, out } = await cli(['create', csv, '--browser-dry-run'], { UTR_DRAW_NAME: 'Playoff 2' });
+      assert.equal(code, 0, out);
+      assert.match(out, /DRAW SELECT: "Playoff 2" opened/);
+      assert.match(out, /SUMMARY \(browser\): NOT_SUBMITTED=8$/m);
+    });
+  });
 });

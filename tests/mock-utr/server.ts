@@ -21,6 +21,8 @@ export interface MockState {
    * `roster` (via the sidebar's "Add to Draw") before the match-card picker can find them.
    */
   editor: { r16: EditorSlot[]; qf: EditorSlot[]; published: boolean; roster: number[] };
+  /** Draws made through the editor's DRAWS "+" > "Create draw" form, with what was picked. */
+  draws: { name: string; fields: Record<string, string | boolean> }[];
 }
 
 export const EVENT_ID = 388079;
@@ -122,6 +124,23 @@ function rosterHtml(state: MockState, query = ''): string {
     `<div class="sec" id="nidHeader">PLAYERS NOT IN DRAW (${notInDraw.length})</div><ul id="roster" style="display:none">${shown.map(row).join('')}</ul>`;
 }
 
+/** The editor's "Create draw" side panel, with the fields seen in the real one. */
+function createDrawPanel(): string {
+  const sel = (label: string, opts: string, initial = opts.split('|')[0]) =>
+    `<div class="f"><label>${label}</label><div class="sel" role="button" aria-haspopup="listbox" data-field="${label}" data-opts="${opts}">${initial}</div></div>`;
+  return `<div id="createPanel" style="display:none;position:fixed;right:0;top:0;width:360px;background:#fff;border:1px solid #333;padding:12px;z-index:5">
+<h3>Create draw</h3>
+<div class="f"><label>Draw name</label><input id="dname" placeholder="Ex. Men's Singles"></div>
+${sel('Game type', 'Singles|Doubles')}${sel('Gender', 'Co-ed|Boys|Girls')}${sel('Ball type', 'Yellow Ball|Green Ball|Orange Ball|Red Ball')}
+<div class="f"><label><input type="checkbox" data-field="This event will have on-site officials"> This event will have on-site officials</label></div>
+<div class="f"><label><input type="checkbox" data-field="Results will count towards ratings" checked> Results will count towards ratings</label></div>
+${sel('Draw type', 'Ad-Hoc|Round Robin|Single Elimination')}
+<div id="seOnly" style="display:none">${sel('Draw size', '8|16|32', '16')}</div>
+<div id="adhocOnly"><div class="f"><label>Round Size</label><input value="1"></div></div>
+${sel('Default scoring format', 'Two Sets w/ Match Tiebreaker|Best of 3 Sets|One Set')}
+<button type="button" id="dcancel">CANCEL</button> <button type="button" id="dcreate">CREATE DRAW</button></div>`;
+}
+
 /** Like the real editor: "Saved" + PUBLISH when clean, "Unsaved changes!" + DISCARD + SAVE once edited. */
 function statusHtml(dirty: boolean): string {
   return dirty
@@ -138,7 +157,10 @@ function editorPage(state: MockState): string {
 [role=dialog]{position:fixed;top:60px;left:420px;background:#fff;border:2px solid #333;padding:12px}</style></head>
 <body><header><a data-testid="user-menu" href="/profile/1">My profile</a></header>
 <h1>${escapeHtml(state.eventName)}</h1>
-<nav><button type="button" id="rail">Draws</button></nav><div><ul class="side" id="side" style="display:none"><li id="g1">Group 01</li><li id="po">Playoff</li></ul></div>
+<nav><button type="button" id="rail">Draws</button></nav>
+<div id="side" style="display:none"><input placeholder="Find a draw"><div class="dh"><span>DRAWS</span> <button type="button" id="newdraw" aria-label="add draw">+</button></div>
+<div>U14-Youth</div><ul class="side"><li id="g1">Group 01</li><li class="dr">Playoff</li>${state.draws.map(d => `<li class="dr">${escapeHtml(d.name)}</li>`).join('')}</ul></div>
+${createDrawPanel()}
 <div id="groupView"><div>Round Robin, Co-ed, Two Sets w/ Match Tiebreaker, 8 Players</div><h2>Round 1</h2>
   <div class="card"><span class="mn">Match #1</span><div class="slot">Pritish Singhal</div><div class="slot">Bye</div><button type="button">Score</button></div></div>
 <div id="playoffView" style="display:none"><div>Single Elimination, Co-ed, Two Sets w/ Match Tiebreaker, 16 Players</div><span id="status">${statusHtml(false)}</span>
@@ -148,7 +170,28 @@ function editorPage(state: MockState): string {
 <script>
 // Like the real editor, a fresh load always shows the default draw (Group 01) until Playoff is chosen.
 document.getElementById('rail').onclick = () => { const l = document.getElementById('side'); l.style.display = l.style.display === 'none' ? 'block' : 'none'; };
-document.getElementById('po').onclick = () => { document.getElementById('groupView').style.display = 'none'; document.getElementById('playoffView').style.display = 'block'; };
+document.getElementById('side').addEventListener('click', e => { if (e.target.closest('li.dr')) { document.getElementById('groupView').style.display = 'none'; document.getElementById('playoffView').style.display = 'block'; } });
+// "Create draw": dropdowns open a listbox of options; Draw type decides which fields show.
+document.getElementById('newdraw').onclick = () => { document.getElementById('createPanel').style.display = 'block'; };
+document.querySelectorAll('#createPanel .sel').forEach(sel => sel.onclick = () => {
+  document.querySelectorAll('#createPanel ul[role=listbox]').forEach(x => x.remove());
+  const ul = document.createElement('ul'); ul.setAttribute('role', 'listbox');
+  sel.dataset.opts.split('|').forEach(o => { const li = document.createElement('li'); li.setAttribute('role', 'option'); li.textContent = o;
+    li.onclick = () => { sel.textContent = o; ul.remove();
+      if (sel.dataset.field === 'Draw type') { document.getElementById('seOnly').style.display = o === 'Single Elimination' ? 'block' : 'none'; document.getElementById('adhocOnly').style.display = o === 'Ad-Hoc' ? 'block' : 'none'; } };
+    ul.append(li); });
+  sel.after(ul);
+});
+document.getElementById('dcancel').onclick = () => { document.getElementById('createPanel').style.display = 'none'; };
+document.getElementById('dcreate').onclick = () => {
+  const fields = {}, name = document.getElementById('dname').value;
+  document.querySelectorAll('#createPanel .sel').forEach(s => { if (s.offsetParent) fields[s.dataset.field] = s.textContent; });
+  document.querySelectorAll('#createPanel input[type=checkbox]').forEach(c => { fields[c.dataset.field] = c.checked; });
+  call('POST', '/api/v1/draws', { name, fields }).then(() => {
+    document.getElementById('createPanel').style.display = 'none';
+    const li = document.createElement('li'); li.className = 'dr'; li.textContent = name; document.querySelector('ul.side').append(li);
+  }).catch(e => alert(e.message));
+};
 const call = (method, url, body) => fetch(url, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(async r => { if (!r.ok) throw new Error(await r.text()); return r.json(); });
 // Like the real editor, an edit updates the bracket in place but stays a draft ("Unsaved
 // changes!") until SAVE; a reload or DISCARD throws the draft away.
@@ -225,7 +268,7 @@ async function readJson(req: http.IncomingMessage): Promise<Record<string, unkno
 }
 
 export async function startMockUtr(port = 0): Promise<{ origin: string; eventUrl: string; state: MockState; close(): Promise<void> }> {
-  const state: MockState = { eventId: EVENT_ID, eventName: EVENT_NAME, players: PLAYERS, matches: [], writes: [], editor: { r16: Array.from({ length: 8 }, () => ({})), qf: Array.from({ length: 4 }, () => ({})), published: false, roster: [] as number[] } };
+  const state: MockState = { eventId: EVENT_ID, eventName: EVENT_NAME, players: PLAYERS, matches: [], writes: [], editor: { r16: Array.from({ length: 8 }, () => ({})), qf: Array.from({ length: 4 }, () => ({})), published: false, roster: [] as number[] }, draws: [] };
   let nextId = 9001;
   // The draw editor's unsaved draft: a copy of the saved bracket made when the page loads.
   let draft: MockState['editor'] = structuredClone(state.editor);
@@ -255,6 +298,14 @@ export async function startMockUtr(port = 0): Promise<{ origin: string; eventUrl
         const query = (url.searchParams.get('query') ?? '').toLowerCase();
         return send(200, draft.roster.filter(index => query.length >= 2 && state.players[index]!.toLowerCase().includes(query))
           .map(index => ({ id: String(index), name: state.players[index]!, rating: (7 + (index % 5) / 2).toFixed(2) })));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/v1/draws') {
+        const body = await readJson(req);
+        const name = String(body.name ?? '').trim();
+        if (!name) return send(400, { error: 'draw name is required' });
+        if (['Group 01', 'Playoff', ...state.draws.map(d => d.name)].includes(name)) return send(409, { error: 'a draw with this name exists' });
+        state.draws.push({ name, fields: body.fields as Record<string, string | boolean> });
+        return send(201, { ok: true });
       }
       if (req.method === 'POST' && url.pathname === '/api/v1/draw/publish') { state.editor.published = draft.published = true; return send(200, { ok: true }); }
       const slotRoute = url.pathname.match(/^\/api\/v1\/draw\/(r16|qf)\/(\d+)\/(slot|score)$/);

@@ -35,6 +35,9 @@ Usage: ./run.sh <command> [extra args]
   scores-dry-run   Browser dry run for score entry: fills scores, submits nothing
   scores           LIVE: enter all scores recorded in matches.csv
   sync             LIVE: enter scores AND create the next round's matches
+  playoff          Guided: asks whether to use an existing draw or create a new one, then fills it step by step
+  new-draw-dry-run Fill the "Create draw" form from draw.json, then CANCEL (creates nothing)
+  new-draw         LIVE: create the draw described in draw.json
   reset-browser    Close a stuck automation browser (fixes "profile is already in use")
   inspect          Save the page structure of what you are looking at (to fit selectors; saves nothing in UTR)
   capture          Record UTR's own web calls while you do one match + one score by hand
@@ -51,6 +54,30 @@ case "$cmd" in
   setup)  npm install && npx playwright install chromium; need_env ;;
   check)  utr validate "$CSV" && utr plan "$CSV" ;;
   reset-browser)   free_profile; echo "Done." ;;
+  new-draw-dry-run) need_env; free_profile; UTR_HEADLESS=false utr new-draw --browser-dry-run --keep-open "$@" ;;
+  new-draw)        need_env; free_profile; utr new-draw --live "$@" ;;
+  playoff)
+          need_env
+          ask() { local reply; read -r -p "$1 [y/N] " reply; [[ "$reply" =~ ^[Yy] ]]; }
+          read -r -p "Fill an existing draw (e) or create a new draw first (n)? [e/n] " choice
+          if [[ "$choice" =~ ^[Nn] ]]; then
+            default=$(node -e "try{console.log(require('./draw.json').name)}catch{console.log('')}")
+            read -r -p "New draw name [$default]: " name; name="${name:-$default}"
+            export UTR_NEW_DRAW_NAME="$name"
+            echo "Settings for the new draw come from draw.json (edit it to change what is selected)."
+            free_profile; utr new-draw --browser-dry-run
+            ask "The form filled correctly (see screenshots/new-draw-form.png). Create \"$name\" for real?" || exit 0
+            free_profile; utr new-draw --live
+          else
+            read -r -p "Draw name [Playoff]: " name; name="${name:-Playoff}"
+          fi
+          export UTR_DRAW_NAME="$name"
+          free_profile; utr create "$CSV" --browser-dry-run
+          ask "All 16 players found. Add them to \"$name\" and fill Match #1 (then SAVE)?" || exit 0
+          free_profile; utr create "$CSV" --live --only R16-1
+          ask "Match #1 looks right in UTR. Fill Matches #2-#8 (then SAVE)?" || exit 0
+          free_profile; utr create "$CSV" --live --all
+          echo "Done. Check the bracket in UTR, then press PUBLISH yourself." ;;
   login|dry-run)
           need_env; free_profile
           echo "A browser window will open. Log in to UTR yourself (including any MFA), then leave it open."
