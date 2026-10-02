@@ -1,0 +1,22 @@
+{
+  "name": "utr-tournament-automation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test tests/*.test.ts",
+    "utr": "node --disable-warning=ExperimentalWarning --experimental-strip-types src/cli.ts",
+    "test:e2e": "node --disable-warning=ExperimentalWarning --experimental-strip-types --test --test-concurrency=1 tests/e2e/*.e2e.ts",
+    "mock:utr": "node --disable-warning=ExperimentalWarning --experimental-strip-types tests/mock-utr/server.ts"
+  },
+  "dependencies": {
+    "playwright": "^1.55.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.1",
+    "@types/node": "^24.5.2",
+    "typescript": "^5.9.2"
+  }
+}

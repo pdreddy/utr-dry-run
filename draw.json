@@ -1,0 +1,13 @@
+{
+  "division": "U14-Youth",
+  "name": "Playoff 2",
+  "fields": {
+    "Game type": "Singles",
+    "Gender": "Co-ed",
+    "Ball type": "Yellow Ball",
+    "Results will count towards ratings": true,
+    "Draw type": "Single Elimination",
+    "Draw size": "16",
+    "Default scoring format": "Two Sets w/ Match Tiebreaker"
+  }
+}

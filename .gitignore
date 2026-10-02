@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.playwright/
+playwright-report/
+test-results/
+screenshots/*.png
+logs/*.log
+logs/*.json
+!screenshots/.gitkeep
+!logs/.gitkeep
