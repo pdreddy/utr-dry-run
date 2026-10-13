@@ -38,6 +38,8 @@ Usage: ./run.sh <command> [extra args]
   playoff          Guided: asks whether to use an existing draw or create a new one, then fills it step by step
   new-draw-dry-run Asks for the new draw's values (Enter keeps draw.json's), fills "Create draw", then CANCEL
   new-draw         LIVE: create the draw with the values saved by new-draw-dry-run (draw.json)
+  groups-dry-run   Check event, division and every player in groups.json; fill each "Add to new draw" form, then CANCEL
+  groups           LIVE: create one ad-hoc draw per group in groups.json (after the same checks)
   reset-browser    Close a stuck automation browser (fixes "profile is already in use")
   inspect          Save the page structure of what you are looking at (to fit selectors; saves nothing in UTR)
   capture          Record UTR's own web calls while you do one match + one score by hand
@@ -56,6 +58,8 @@ case "$cmd" in
   reset-browser)   free_profile; echo "Done." ;;
   new-draw-dry-run) need_env; free_profile; UTR_HEADLESS=false utr new-draw --browser-dry-run --ask --keep-open "$@" ;;
   new-draw)        need_env; free_profile; utr new-draw --live "$@" ;;
+  groups-dry-run)  need_env; free_profile; UTR_HEADLESS=false utr group-draws --browser-dry-run --keep-open "$@" ;;
+  groups)          need_env; free_profile; UTR_HEADLESS=false utr group-draws --live "$@" ;;
   playoff)
           need_env
           ask() { local reply; read -r -p "$1 [y/N] " reply; [[ "$reply" =~ ^[Yy] ]]; }

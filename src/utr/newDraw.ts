@@ -20,23 +20,23 @@ export function readDrawConfig(file = process.env.UTR_DRAW_CONFIG || 'draw.json'
   return config;
 }
 
-async function click(target: Locator): Promise<void> {
+export async function click(target: Locator): Promise<void> {
   const label = `${await target.innerText().catch(() => '')} ${await target.getAttribute('aria-label').catch(() => '')}`;
   if (EDITOR.forbiddenClick.test(label)) throw new Error(`Refusing to click "${label.trim()}"`);
   await target.click({ timeout: 10_000 });
 }
 
-async function firstVisible(locator: Locator): Promise<Locator | undefined> {
+export async function firstVisible(locator: Locator): Promise<Locator | undefined> {
   for (let i = 0; i < Math.min(await locator.count().catch(() => 0), 20); i++) {
     if (await locator.nth(i).isVisible().catch(() => false)) return locator.nth(i);
   }
   return undefined;
 }
 
-const exact = (text: string) => new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
+export const exact = (text: string) => new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i');
 
 /** Opens the editor's DRAWS list if it is collapsed (its "Find a draw" box is hidden). */
-async function openDrawList(page: Page): Promise<void> {
+export async function openDrawList(page: Page): Promise<void> {
   if (await page.getByPlaceholder(/find a draw/i).first().isVisible().catch(() => false)) return;
   const rail = page.getByText('Draws', { exact: true });
   let target: Locator | undefined, leftX = Infinity;
@@ -121,7 +121,7 @@ async function fieldControl(label: Locator, kind: 'checkbox' | 'value'): Promise
 }
 
 /** Sets one form field by its label. Returns undefined on success, or what went wrong. */
-async function setField(page: Page, panel: Locator, labelText: string, value: string | boolean): Promise<string | undefined> {
+export async function setField(page: Page, panel: Locator, labelText: string, value: string | boolean): Promise<string | undefined> {
   const label = await firstVisible(panel.getByText(exact(labelText)));
   if (!label) return `field "${labelText}" not found`;
   if (typeof value === 'boolean') {

@@ -11,6 +11,7 @@ import { lineNamesPlayer, renderedScoreMatches, roundLabels, scoreFieldValues } 
 import { endpointTemplate, extractId, shapeOf } from '../src/utr/network.ts';
 import { selectRows } from '../src/cli.ts';
 import { inRosterSection } from '../src/utr/drawEditor.ts';
+import { checkGroupsConfig, norm, rowName } from '../src/utr/groupDraws.ts';
 
 const csv = `match_id,round,player_a,player_b,depends_on_a,depends_on_b,winner,score,status
 R1,R16,Alice Smith,Bob Jones,,,,,READY_TO_CREATE
@@ -127,5 +128,21 @@ describe('CSV and bracket automation', () => {
     const bar = { x: 8, y: 200, width: 320, height: 30 };
     assert.equal(inRosterSection({ x: 40, y: 260, width: 100, height: 16 }, bar), true);
     assert.equal(inRosterSection({ x: 370, y: 400, width: 100, height: 16 }, bar), false);
+  });
+
+  it('group-draws reads a player row\'s name and compares names and divisions exactly', () => {
+    assert.equal(rowName('Uma Vommi\n2.51 (20%)\nUR\nUPDATE\numa@example.com\nSMS ON\nMain\nMen\u2019s Open Singles Ladder'), 'Uma Vommi');
+    assert.equal(rowName('Malla Reddy Cheerke 3.10\nFrisco, TX'), 'Malla Reddy Cheerke');
+    assert.equal(rowName('5.81\nUR\nSMS OFF'), undefined);
+    assert.equal(norm('Men\u2019s  Open Singles Ladder'), norm("men's open singles ladder"));
+    assert.notEqual(norm('Uma Vommi'), norm('Uma Vommi Reddy'));
+  });
+
+  it('group-draws refuses a doubles division, repeated players and repeated group names', () => {
+    const base = { eventUrl: '', eventName: 'E', division: "Men's Open Singles Ladder", drawType: 'Ad-hoc', format: 'Best of 3 sets' };
+    assert.deepEqual(checkGroupsConfig({ ...base, groups: [{ name: 'Group A', players: ['A One', 'B Two'] }] }), []);
+    assert.match(checkGroupsConfig({ ...base, division: "Men's Open Doubles Ladder", groups: [{ name: 'G', players: ['A One'] }] }).join(), /doubles division/);
+    assert.match(checkGroupsConfig({ ...base, groups: [{ name: 'G1', players: ['A One'] }, { name: 'G2', players: ['a  one'] }] }).join(), /"a {2}one" is listed in both G1 and G2/);
+    assert.match(checkGroupsConfig({ ...base, groups: [{ name: 'G', players: ['A One'] }, { name: 'g', players: ['B Two'] }] }).join(), /group name "g" is used twice/);
   });
 });

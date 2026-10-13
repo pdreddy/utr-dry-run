@@ -11,6 +11,7 @@ import { ensureAuthenticated } from './utr/login.ts';
 import { automationTarget, drawEditorUrl, eventUrl, openAndVerifyEvent, siteOrigin } from './utr/event.ts';
 import { UtrDrawEditor } from './utr/drawEditor.ts';
 import { createDraw, readDrawConfig } from './utr/newDraw.ts';
+import { checkGroupsConfig, createGroupDraws, readGroupsConfig } from './utr/groupDraws.ts';
 import { discoverControls } from './utr/discovery.ts';
 import { UtrEventPage } from './utr/eventPage.ts';
 import { recordApiCalls } from './utr/network.ts';
@@ -228,6 +229,40 @@ async function newDraw(options: ModeOptions): Promise<void> {
   if (result.startsWith('NEEDS_REVIEW')) process.exitCode = 2;
 }
 
+/** One ad-hoc draw per group in groups.json, from the Event Desk Players tab. A browser dry run fills each form and cancels. */
+async function groupDraws(options: ModeOptions): Promise<void> {
+  const mode = requireMode(options);
+  const file = process.env.UTR_GROUPS_CONFIG || 'groups.json';
+  const config = readGroupsConfig(file);
+  if (!config.eventUrl?.trim()) {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    config.eventUrl = (await rl.question(`Paste the UTR address of "${config.eventName}" (its event page): `)).trim();
+    rl.close();
+    if (!/^https:\/\/[^/]*utrsports\.net\/events\/\d+/.test(config.eventUrl) && !/^http:\/\/(127\.0\.0\.1|localhost)/.test(config.eventUrl)) {
+      throw new Error('That is not a UTR event address (https://app.utrsports.net/events/<number>...)');
+    }
+    fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`);
+    console.log(`Saved the address to ${file}.`);
+  }
+  console.log(`GROUPS event: "${config.eventName}"\nGROUPS division: "${config.division}"\nGROUPS draw type: "${config.drawType}", format: "${config.format}"`);
+  for (const group of config.groups ?? []) console.log(`GROUPS ${group.name}: ${group.players.length} players`);
+  const problems = checkGroupsConfig(config);
+  if (problems.length) { console.error(`STOPPED before opening UTR: ${problems.join('; ')}`); process.exitCode = 2; return; }
+  if (mode === 'dry') return;
+  let failed = false;
+  await withBrowser(options, async page => {
+    const report = await createGroupDraws(page, config, mode === 'live');
+    console.log('\nREPORT');
+    for (const group of report.groups) console.log(`  ${group.name}: ${group.result}${group.url ? `  ${group.url}` : ''}${group.players !== undefined ? `  (${group.players} players)` : ''}`);
+    console.log(`  Unmatched players: ${report.unmatched.length ? `\n    ${report.unmatched.join('\n    ')}` : 'none'}`);
+    if (report.stopped) console.log(`  STOPPED: ${report.stopped}`);
+    console.log('  Scores entered: none (this command has no score step)');
+    if (report.existingDrawsUnchanged !== undefined) console.log(`  Existing draws (including the automated Group A and its subgroups) still listed unchanged: ${report.existingDrawsUnchanged ? 'yes' : 'NO, see above'}`);
+    failed = !!report.stopped || report.groups.some(g => g.result.startsWith('NEEDS_REVIEW')) || report.existingDrawsUnchanged === false;
+  });
+  if (failed) process.exitCode = 2;
+}
+
 /** Records the UTR web app's own API calls while the account owner performs one create and one score by hand. */
 async function capture(options: ModeOptions): Promise<void> {
   await withBrowser({ ...options, keepOpen: false }, async page => {
@@ -277,8 +312,8 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const command = args[0];
   const file = args[1] && !args[1].startsWith('--') ? args[1] : 'matches.csv';
-  if (!command || !['validate', 'plan', 'create', 'scores', 'sync', 'capture', 'inspect', 'new-draw'].includes(command)) {
-    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync|capture|inspect|new-draw> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all|--only <match_id>] [--keep-open]');
+  if (!command || !['validate', 'plan', 'create', 'scores', 'sync', 'capture', 'inspect', 'new-draw', 'group-draws'].includes(command)) {
+    throw new Error('Usage: npm run utr -- <validate|plan|create|scores|sync|capture|inspect|new-draw|group-draws> [matches.csv] [--dry-run|--browser-dry-run|--live] [--all|--only <match_id>] [--keep-open]');
   }
   if (command === 'validate') { console.log(`VALID: ${load(file).rows.length} matches`); return; }
   if (command === 'plan') { printPlan(load(file).rows); return; }
@@ -290,6 +325,7 @@ async function main(): Promise<void> {
   if (command === 'capture') { await capture(options); return; }
   if (command === 'inspect') { await inspect(options, file); return; }
   if (command === 'new-draw') { await newDraw(options); return; }
+  if (command === 'group-draws') { await groupDraws(options); return; }
   if (options.only !== undefined && (!options.only || options.only.startsWith('--'))) throw new Error('--only requires a match_id');
   if (options.only && options.all) throw new Error('Use either --only or --all, not both');
   await browserRun(file, command as Operation, options);
