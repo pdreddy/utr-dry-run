@@ -15,13 +15,14 @@ export interface GroupDrawsConfig {
   division: string;
   drawType: string;
   format: string;
-  groups: { name: string; players: string[] }[];
+  /** `createdAs` / `url` are written back after a live run creates the group's draw, so a re-run skips it. */
+  groups: { name: string; players: string[]; createdAs?: string; url?: string }[];
 }
 
 export interface GroupDrawsReport {
   stopped?: string;
   unmatched: string[];
-  groups: { name: string; result: string; url?: string; players?: number }[];
+  groups: { name: string; requested: string; result: string; url?: string; players?: number }[];
   existingDrawsUnchanged?: boolean;
 }
 
@@ -325,11 +326,17 @@ async function cancelForm(page: Page, panel: Locator): Promise<void> {
  * stops before creating anything if any check fails. Then, live, creates one ad-hoc draw
  * per group and verifies it; a dry run fills each form and cancels it instead.
  */
-export async function createGroupDraws(start: Page, config: GroupDrawsConfig, live: boolean): Promise<GroupDrawsReport> {
+export async function createGroupDraws(start: Page, config: GroupDrawsConfig, live: boolean, saveConfig: () => void = () => undefined): Promise<GroupDrawsReport> {
   const report: GroupDrawsReport = { unmatched: [], groups: [] };
   const stop = (reason: string) => { report.stopped = reason; return report; };
   const configProblems = checkGroupsConfig(config);
   if (configProblems.length) return stop(configProblems.join('; '));
+  // Groups an earlier live run already created are skipped, never made again.
+  for (const group of config.groups.filter(g => g.createdAs)) {
+    report.groups.push({ name: group.createdAs!, requested: group.name, result: 'SKIP_ALREADY_CREATED', url: group.url });
+  }
+  const pending = config.groups.filter(g => !g.createdAs);
+  if (!pending.length) return report;
 
   const opened = await openPlayersTab(start, config);
   const page = opened.page;
@@ -347,27 +354,35 @@ export async function createGroupDraws(start: Page, config: GroupDrawsConfig, li
   }
   const byName = new Map<string, Row[]>();
   for (const row of rows) byName.set(norm(row.name), [...(byName.get(norm(row.name)) ?? []), row]);
-  for (const group of config.groups) {
+  for (const group of pending) {
     for (const player of group.players) {
       const found = byName.get(norm(player)) ?? [];
       if (found.length !== 1) report.unmatched.push(`${player} (${group.name}): ${found.length ? `${found.length} players with this name` : 'not in this division'}`);
     }
   }
-  const total = config.groups.reduce((n, g) => n + g.players.length, 0);
+  const total = pending.reduce((n, g) => n + g.players.length, 0);
   console.log(`GROUPS players matched: ${total - report.unmatched.length} of ${total}`);
   if (report.unmatched.length) return stop(`${report.unmatched.length} listed player(s) could not be matched exactly once in "${config.division}"; nothing was created`);
 
   const before = await drawListLines(page);
-  for (const group of config.groups) {
-    const existing = await drawsNamed(page, group.name);
-    if (existing.length) {
-      await clearDrawSearch(page);
-      return stop(`a draw named "${group.name}" already exists; nothing was created. Give this group a different name in groups.json`);
+  // A name already in the DRAWS list (the automated "Group A", say) gets a letter appended
+  // ("Group AA", then "Group AB"…) so the existing draw is left alone and the new one is unique.
+  const drawNames = new Map<typeof pending[number], string>(), taken = new Set<string>();
+  for (const group of pending) {
+    let name = group.name;
+    for (let i = 0; (await drawsNamed(page, name)).length || taken.has(norm(name)); i++) {
+      if (i >= 26) { await clearDrawSearch(page); return stop(`"${group.name}" and "${group.name}A" to "${group.name}Z" are all taken; nothing was created`); }
+      name = `${group.name}${String.fromCharCode(65 + i)}`;
     }
+    if (name !== group.name) console.log(`GROUPS "${group.name}" already exists; this group will be named "${name}"`);
+    drawNames.set(group, name);
+    taken.add(norm(name));
   }
   await clearDrawSearch(page);
 
-  for (const group of config.groups) {
+  for (const listed of pending) {
+    const group = { ...listed, name: drawNames.get(listed)! };
+    const entry = (result: string, extra: Partial<GroupDrawsReport['groups'][number]> = {}) => report.groups.push({ name: group.name, requested: listed.name, result, ...extra });
     console.log(`GROUPS ${group.name}: selecting ${group.players.length} players`);
     const wanted = new Set(group.players.map(norm));
     const selected = await selectOnly(page, wanted);
@@ -375,14 +390,14 @@ export async function createGroupDraws(start: Page, config: GroupDrawsConfig, li
     const missing = group.players.filter(player => !selected.some(name => norm(name) === norm(player)));
     if (extra.length || missing.length) {
       await selectOnly(page, new Set());
-      report.groups.push({ name: group.name, result: `NEEDS_REVIEW: selection did not hold (missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})` });
+      entry(`NEEDS_REVIEW: selection did not hold (missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})`);
       return stop(`selecting ${group.name}'s players did not work as expected`);
     }
     const form = await openAddToNewDraw(page);
     if (!form.panel) {
       await screenshot(page, 'groups-stopped');
       await selectOnly(page, new Set());
-      report.groups.push({ name: group.name, result: `NEEDS_REVIEW: ${form.problem}` });
+      entry(`NEEDS_REVIEW: ${form.problem}`);
       return stop(form.problem!);
     }
     const problems = await fillDrawForm(page, form.panel, group, config);
@@ -390,7 +405,7 @@ export async function createGroupDraws(start: Page, config: GroupDrawsConfig, li
     if (!live || problems.length) {
       await cancelForm(page, form.panel);
       await selectOnly(page, new Set());
-      report.groups.push({ name: group.name, result: problems.length ? `NEEDS_REVIEW: ${problems.join('; ')}` : 'NOT_SUBMITTED' });
+      entry(problems.length ? `NEEDS_REVIEW: ${problems.join('; ')}` : 'NOT_SUBMITTED');
       if (problems.length) return stop(`the form for ${group.name} could not be filled`);
       continue;
     }
@@ -398,18 +413,18 @@ export async function createGroupDraws(start: Page, config: GroupDrawsConfig, li
     if (!submit) {
       await cancelForm(page, form.panel);
       await selectOnly(page, new Set());
-      report.groups.push({ name: group.name, result: 'NEEDS_REVIEW: the form has no ADD / CREATE control' });
+      entry('NEEDS_REVIEW: the form has no ADD / CREATE control');
       return stop('the "Add to new draw" form has no submit control');
     }
     await click(submit);
     await page.getByText(exact('Draw name')).first().waitFor({ state: 'hidden', timeout: 15_000 }).catch(() => undefined);
     const saved = await new UtrDrawEditor(page, page.url()).save();
-    if (saved.startsWith('NEEDS_REVIEW')) { report.groups.push({ name: group.name, result: saved }); return stop(saved); }
+    if (saved.startsWith('NEEDS_REVIEW')) { entry(saved); return stop(saved); }
 
     let found = await drawsNamed(page, group.name);
     for (let wait = 0; wait < 20 && found.length !== 1; wait++) { await page.waitForTimeout(500); found = await drawsNamed(page, group.name); }
     if (found.length !== 1) {
-      report.groups.push({ name: group.name, result: `NEEDS_REVIEW: after adding, ${found.length} draws named "${group.name}" are listed` });
+      entry(`NEEDS_REVIEW: after adding, ${found.length} draws named "${group.name}" are listed`);
       return stop(`could not verify ${group.name} in the DRAWS list`);
     }
     await click(found[0]!);
@@ -418,10 +433,12 @@ export async function createGroupDraws(start: Page, config: GroupDrawsConfig, li
     const url = page.url();
     const count = Number((await page.locator('body').innerText().catch(() => '')).match(/players\s*\((\d+)\)/i)?.[1] ?? NaN);
     await screenshot(page, `groups-${group.name.replace(/\W+/g, '-')}-created`);
-    report.groups.push({
-      name: group.name, url, players: Number.isNaN(count) ? undefined : count,
-      result: Number.isNaN(count) || count === group.players.length ? 'CREATED' : `NEEDS_REVIEW: created, but it shows ${count} players, not ${group.players.length}`
-    });
+    entry(Number.isNaN(count) || count === group.players.length ? 'CREATED' : `NEEDS_REVIEW: created, but it shows ${count} players, not ${group.players.length}`,
+      { url, players: Number.isNaN(count) ? undefined : count });
+    // Record it at once, so a re-run (even after a later failure) never makes it twice.
+    listed.createdAs = group.name;
+    listed.url = url;
+    saveConfig();
     console.log(`GROUPS ${group.name}: ${report.groups.at(-1)!.result} ${url}`);
     await clearDrawSearch(page);
     if (await showPlayersTab(page, config.division) || await selectDivision(page, config.division)) return stop(`could not return to the Players tab after creating ${group.name}`);

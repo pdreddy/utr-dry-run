@@ -88,49 +88,50 @@ describe('group-draws: four ad-hoc draws from the Players tab', { timeout: 1_500
     unchanged();
   });
 
-  it('stops when a group would share the automated "Group A" draw\'s name', async () => {
-    const { code, out } = await cli(['group-draws', '--live'], config());
-    assert.equal(code, 2, out);
-    assert.match(out, /GROUPS players matched: 64 of 64/, 'Uma Vommi and Brian Chong also play doubles; only the singles division counts');
-    assert.match(out, /a draw named "Group A" already exists; nothing was created/);
-    assert.deepEqual(mock.state.writes, []);
-    unchanged();
-  });
+  let liveConfig: Record<string, string>;
 
-  it('dry run selects each group, fills its form, cancels, and creates nothing', async () => {
-    const { code, out } = await cli(['group-draws', '--browser-dry-run'], config({ groups: renamed }));
+  it('dry run: "Group A" is taken, so that group would be "Group AA"; each form is filled and cancelled, nothing created', async () => {
+    const env = config();
+    const { code, out } = await cli(['group-draws', '--browser-dry-run'], env);
     assert.equal(code, 0, out);
+    assert.match(out, /GROUPS players matched: 64 of 64/, 'Uma Vommi and Brian Chong also play doubles; only the singles division counts');
+    assert.match(out, /"Group A" already exists; this group will be named "Group AA"/);
     assert.equal(out.match(/^ {2}.+: NOT_SUBMITTED$/gm)?.length, 4, out); // report lines
+    assert.match(out, /^ {2}Group AA \(listed as "Group A", a name already taken\): NOT_SUBMITTED$/m);
     assert.match(out, /Draw type: "Ad-hoc"/);
     assert.match(out, /Format: "Best of 3 sets"/);
     assert.deepEqual(mock.state.writes, []);
+    assert.ok(!fs.readFileSync(env.UTR_GROUPS_CONFIG!, 'utf8').includes('createdAs'), 'a dry run records nothing');
     unchanged();
   });
 
-  it('live creates the four draws, each with exactly its 16 players, Ad-Hoc, Best of 3 Sets', async () => {
-    const { code, out } = await cli(['group-draws', '--live'], config({ groups: renamed }));
+  it('live creates "Group AA", B, C and D, each with exactly its 16 players, Ad-Hoc, Best of 3 Sets', async () => {
+    liveConfig = config();
+    const { code, out } = await cli(['group-draws', '--live'], liveConfig);
     assert.equal(code, 0, out);
     assert.equal(out.match(/^ {2}.+: CREATED {2}/gm)?.length, 4, out); // report lines
     assert.match(out, /Unmatched players: none/);
     assert.match(out, /Scores entered: none/);
     assert.match(out, /still listed unchanged: yes/);
     const made = mock.state.draws.slice(existing.length);
-    assert.deepEqual(made.map(d => d.name), ['Group A (Ladder)', 'Group B', 'Group C', 'Group D']);
+    assert.deepEqual(made.map(d => d.name), ['Group AA', 'Group B', 'Group C', 'Group D']);
     for (const [i, draw] of made.entries()) {
       assert.equal(draw.drawType, 'Ad-Hoc');
       assert.equal(draw.format, 'Best of 3 Sets');
-      assert.deepEqual(draw.players.map(p => mock.state.players[p]!.name).sort(), [...renamed[i].players].sort());
+      assert.deepEqual(draw.players.map(p => mock.state.players[p]!.name).sort(), [...REAL.groups[i].players].sort());
       assert.ok(draw.players.every(p => mock.state.players[p]!.division.includes('Singles')), 'singles players only');
-      assert.match(out, new RegExp(`${draw.name.replace(/[()]/g, '\\$&')}: CREATED  http://127\\.0\\.0\\.1:\\d+/events/500001/draws\\?v=drawEditor&d=${draw.id}  \\(16 players\\)`));
+      assert.match(out, new RegExp(`${draw.name}( \\(listed as "Group A", a name already taken\\))?: CREATED  http://127\\.0\\.0\\.1:\\d+/events/500001/draws\\?v=drawEditor&d=${draw.id}  \\(16 players\\)`));
     }
+    const saved = JSON.parse(fs.readFileSync(liveConfig.UTR_GROUPS_CONFIG!, 'utf8'));
+    assert.deepEqual(saved.groups.map((g: { createdAs: string }) => g.createdAs), ['Group AA', 'Group B', 'Group C', 'Group D']);
     unchanged();
   });
 
-  it('re-running creates nothing twice', async () => {
+  it('re-running skips the four created groups and makes nothing twice', async () => {
     const count = mock.state.draws.length;
-    const { code, out } = await cli(['group-draws', '--live'], config({ groups: renamed }));
-    assert.equal(code, 2, out);
-    assert.match(out, /a draw named "Group A \(Ladder\)" already exists; nothing was created/);
+    const { code, out } = await cli(['group-draws', '--live'], liveConfig);
+    assert.equal(code, 0, out);
+    assert.equal(out.match(/: SKIP_ALREADY_CREATED/g)?.length, 4, out);
     assert.equal(mock.state.draws.length, count);
   });
 });

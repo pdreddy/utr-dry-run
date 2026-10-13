@@ -245,15 +245,18 @@ async function groupDraws(options: ModeOptions): Promise<void> {
     console.log(`Saved the address to ${file}.`);
   }
   console.log(`GROUPS event: "${config.eventName}"\nGROUPS division: "${config.division}"\nGROUPS draw type: "${config.drawType}", format: "${config.format}"`);
-  for (const group of config.groups ?? []) console.log(`GROUPS ${group.name}: ${group.players.length} players`);
+  for (const group of config.groups ?? []) console.log(`GROUPS ${group.name}: ${group.players.length} players${group.createdAs ? ` (already created as "${group.createdAs}", will be skipped)` : ''}`);
   const problems = checkGroupsConfig(config);
   if (problems.length) { console.error(`STOPPED before opening UTR: ${problems.join('; ')}`); process.exitCode = 2; return; }
   if (mode === 'dry') return;
   let failed = false;
   await withBrowser(options, async page => {
-    const report = await createGroupDraws(page, config, mode === 'live');
+    const report = await createGroupDraws(page, config, mode === 'live', () => fs.writeFileSync(file, `${JSON.stringify(config, null, 2)}\n`));
     console.log('\nREPORT');
-    for (const group of report.groups) console.log(`  ${group.name}: ${group.result}${group.url ? `  ${group.url}` : ''}${group.players !== undefined ? `  (${group.players} players)` : ''}`);
+    for (const group of report.groups) {
+      const renamed = group.name !== group.requested ? ` (listed as "${group.requested}", a name already taken)` : '';
+      console.log(`  ${group.name}${renamed}: ${group.result}${group.url ? `  ${group.url}` : ''}${group.players !== undefined ? `  (${group.players} players)` : ''}`);
+    }
     console.log(`  Unmatched players: ${report.unmatched.length ? `\n    ${report.unmatched.join('\n    ')}` : 'none'}`);
     if (report.stopped) console.log(`  STOPPED: ${report.stopped}`);
     console.log('  Scores entered: none (this command has no score step)');
