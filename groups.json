@@ -1,0 +1,93 @@
+{
+  "eventUrl": "",
+  "eventName": "Prosper Premier Racquet Club Verified Tournament",
+  "division": "Men's Open Singles Ladder",
+  "drawType": "Ad-hoc",
+  "format": "Best of 3 sets",
+  "groups": [
+    {
+      "name": "Group A",
+      "players": [
+        "Nagarjuna Saladi",
+        "Vinod Marakoosham",
+        "Saket Raizada",
+        "Uday Katikala",
+        "Mahidhar Penigi",
+        "Durga Kalavakolanu",
+        "Usman Jehangiri",
+        "Brian Chong",
+        "Malla Reddy Cheerke",
+        "Alexander Lu",
+        "Hari Mothukuri",
+        "Mohamed Noufal",
+        "Abhishek Mohnot",
+        "Damodhara Palavali",
+        "Asish Madhavaram",
+        "Abhishek Kadavil"
+      ]
+    },
+    {
+      "name": "Group B",
+      "players": [
+        "Sudarshan Paliwal",
+        "Sridhar Kuppusamy",
+        "Vivekvardhan Reddy Mereddy",
+        "Kalyan Kalidindi",
+        "Dinesh Reddy Timmareddy",
+        "Prashanth Jayantha Kumar",
+        "Satish Reddy Orugunta",
+        "Uma Vommi",
+        "Srinidhi Kulkarni",
+        "Sandeep Gengineri",
+        "Karthik Ragunathan",
+        "Waqas Majeed",
+        "Pratik Pitroda",
+        "Joel Kodoru",
+        "Sripathy Pal",
+        "Mayur Patel"
+      ]
+    },
+    {
+      "name": "Group C",
+      "players": [
+        "Prashanth Gourineni",
+        "Rajasekhar Mangalampally",
+        "John Atkinson",
+        "Yogesh Dhadge",
+        "Raj Chava",
+        "Sarat Edara",
+        "Narayan Prasad",
+        "Ganesh Deivarayan",
+        "Ninad Mahajan",
+        "Janaki Ram Kantheti",
+        "Krishna Vennapusa",
+        "Jitin Jaitly",
+        "Chendur Anand",
+        "Asif Mohammed",
+        "Nivas Nazeer",
+        "Muthukumaravel Kaveriappan"
+      ]
+    },
+    {
+      "name": "Group D",
+      "players": [
+        "Rohan Shetty",
+        "Debashish Baishyantri",
+        "Chandrakant Dharme",
+        "Krishna Pamarthi",
+        "Deepak Lalwani",
+        "Hariprashanth Ganapathy",
+        "Suresh Gulla",
+        "Jay Sermadevi",
+        "Vinod Aripaka",
+        "Sankara Lakshmanan",
+        "Mohan Koripuri",
+        "Bhaskar Boddireddy",
+        "Gopal Setty",
+        "Aathithya Manivannan",
+        "Christian Atkinson",
+        "Vasu Manjegowda"
+      ]
+    }
+  ]
+}
